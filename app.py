@@ -2,18 +2,62 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+import re
 
+# ==========================================
+# 定義：時數分割與均分函數
+# ==========================================
+def split_and_distribute(df, target_col, hours_col):
+    """將指定欄位中的多個數值(用/,;\n隔開)拆分，並將該列時數平均分配"""
+    df = df.copy()
+    
+    # 確保欄位為字串並處理空值
+    df[target_col] = df[target_col].astype(str).replace(['nan', 'None', ''], 'Unknown')
+    
+    def safe_split(val):
+        if val == 'Unknown':
+            return ['Unknown']
+        # 使用正則表達式分割: 斜線、逗號、分號，以及換行符號(\n, \r)
+        parts = re.split(r'[/,;\n\r]+', str(val))
+        # 去除前後空白並過濾掉空字串
+        parts = [p.strip() for p in parts if p.strip()]
+        return parts if parts else ['Unknown']
+
+    # 1. 產生分割後的清單陣列 (例如: ['A', 'B'])
+    df['__split_list'] = df[target_col].apply(safe_split)
+    
+    # 2. 計算這格被切割成多少個單位 (例如: 2)
+    df['__split_count'] = df['__split_list'].apply(len)
+    
+    # 3. 時數平均分配 (總時數 / 單位數)
+    # 若原本時數為 20, 則變成 20 / 2 = 10
+    df[hours_col] = df[hours_col] / df['__split_count']
+    
+    # 4. 將陣列展開成多筆資料 (explode)
+    # 原本 1 列會變成 2 列，且每列的時數都是均分後的 10
+    df = df.explode('__split_list')
+    
+    # 5. 把展開後的值寫回原本的欄位
+    df[target_col] = df['__split_list']
+    
+    # 刪除暫存用的欄位
+    df = df.drop(columns=['__split_list', '__split_count'])
+    return df
+
+# ==========================================
+# 網頁主程式開始
+# ==========================================
 # 設定網頁標題與寬度
 st.set_page_config(page_title="Hours Analysis Dashboard", layout="wide")
 
-st.title("📊 機台與工程師時數進階分析儀表板")
+st.title("📊 機台與工程師時數進階分析儀表板 (含時數均分)")
 
 # --- 1. 建立檔案上傳區塊 ---
 uploaded_file = st.file_uploader("請上傳您的 Excel 時數紀錄表", type=["xlsx", "xls"])
 
 if uploaded_file is not None:
     try:
-        st.info("檔案上傳成功！正在為您解析資料並繪製圖表...")
+        st.info("檔案上傳成功！正在為您自動拆解多單位並重新計算時數...")
         
         # 讀取檔案
         df_tester_raw = pd.read_excel(uploaded_file, sheet_name="Tester Hours", skiprows=3)
@@ -29,23 +73,24 @@ if uploaded_file is not None:
         df_tester['Month'] = df_tester['Date'].dt.to_period('M').astype(str)
         df_tester['Tester Total Hours'] = pd.to_numeric(df_tester['Tester Total Hours'], errors='coerce').fillna(0)
 
-        # 1. 依月份與機台
+        # 🌟 套用「分割與均分」邏輯到需要統計的維度欄位 🌟
+        for col in ['Tester #', 'TEMP', 'Customer Requestor']:
+            df_tester = split_and_distribute(df_tester, target_col=col, hours_col='Tester Total Hours')
+
+        # 1. 依月份與機台 (已均分)
         monthly_tester_hours = df_tester.groupby(['Month', 'Tester #'])['Tester Total Hours'].sum().reset_index()
         
-        # 2. 依 TEMP
-        df_tester['TEMP'] = df_tester['TEMP'].astype(str)
+        # 2. 依 TEMP (已均分)
         temp_hours = df_tester.groupby('TEMP')['Tester Total Hours'].sum().reset_index()
         temp_hours = temp_hours.sort_values('Tester Total Hours', ascending=False)
         
-        # 3. 依 Customer Requestor (Tester)
-        df_tester['Customer Requestor'] = df_tester['Customer Requestor'].astype(str)
+        # 3. 依 Customer Requestor (已均分)
         tester_req_hours = df_tester.groupby('Customer Requestor')['Tester Total Hours'].sum().reset_index()
         tester_req_hours = tester_req_hours.sort_values('Tester Total Hours', ascending=False)
 
         # ==========================================
         # 處理 [Engineering Hours] 資料
         # ==========================================
-        # 加入 Customer Requestor 欄位
         df_eng = df_eng_raw[['Date', 'Name', 'Engineering Support Hours', 'Tester', 'Customer Requestor']].copy()
         df_eng.dropna(subset=['Date', 'Name', 'Engineering Support Hours'], how='all', inplace=True)
         df_eng['Date'] = pd.to_datetime(df_eng['Date'], errors='coerce')
@@ -53,20 +98,22 @@ if uploaded_file is not None:
         df_eng['Month'] = df_eng['Date'].dt.to_period('M').astype(str)
         df_eng['Engineering Support Hours'] = pd.to_numeric(df_eng['Engineering Support Hours'], errors='coerce').fillna(0)
 
-        # 1. 依月份與工程師
+        # 🌟 套用「分割與均分」邏輯到需要統計的維度欄位 🌟
+        for col in ['Name', 'Tester', 'Customer Requestor']:
+            df_eng = split_and_distribute(df_eng, target_col=col, hours_col='Engineering Support Hours')
+
+        # 1. 依月份與工程師 (已均分)
         monthly_eng_hours = df_eng.groupby(['Month', 'Name'])['Engineering Support Hours'].sum().reset_index()
         
-        # 2. 依 Tester (機台)
-        df_eng['Tester'] = df_eng['Tester'].astype(str)
+        # 2. 依 Tester (已均分)
         eng_tester_hours = df_eng.groupby('Tester')['Engineering Support Hours'].sum().reset_index()
         eng_tester_hours = eng_tester_hours.sort_values('Engineering Support Hours', ascending=False)
 
-        # 3. 新增: 依 Customer Requestor (Engineering)
-        df_eng['Customer Requestor'] = df_eng['Customer Requestor'].astype(str)
+        # 3. 依 Customer Requestor (已均分)
         eng_req_hours = df_eng.groupby('Customer Requestor')['Engineering Support Hours'].sum().reset_index()
         eng_req_hours = eng_req_hours.sort_values('Engineering Support Hours', ascending=False)
 
-        st.success("資料解析完成！圖表已生成。")
+        st.success("✅ 資料解析與均分完成！圖表已生成。")
         st.divider()
 
         # ==========================================
@@ -145,10 +192,8 @@ if uploaded_file is not None:
             st.pyplot(fig4)
 
         with col6:
-            # 新增的第六張圖表
             st.markdown("##### 🟧 [Engineering Hours] 依客戶需求者統計")
             fig6, ax6 = plt.subplots(figsize=(10, 5))
-            # 使用不同的配色 (rocket) 以區分
             sns.barplot(data=eng_req_hours, x='Customer Requestor', y='Engineering Support Hours', ax=ax6, palette='rocket')
             ax6.set_title('[Engineering Hours] Total Hours by Customer Requestor', fontweight='bold')
             ax6.set_xlabel('Customer Requestor')
