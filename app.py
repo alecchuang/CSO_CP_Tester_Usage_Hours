@@ -80,74 +80,93 @@ if uploaded_file is not None:
         st.divider()
 
         # ==========================================
-        # 繪圖排版函數 (分離中文UI與英文圖表標題)
+        # 繪圖排版與動態篩選函數 🌟 (核心更新區塊)
         # ==========================================
         sns.set_theme(style="whitegrid")
 
-        def render_table_and_chart(ui_title, chart_title, df, x_col, y_col, hue_col=None, palette=None):
-            # 網頁上的文字保持中文
+        def render_table_and_chart(ui_title, chart_title, df, x_col, y_col, hue_col=None, filter_col=None, palette=None):
             st.markdown(f"#### {ui_title}")
             
             col_data, col_chart = st.columns([1, 2])
             
             with col_data:
-                st.dataframe(df, use_container_width=True)
+                # --- 新增：互動式篩選器 ---
+                if filter_col:
+                    unique_items = sorted(df[filter_col].unique().tolist())
+                    # 在表格上方放置多選選單 (預設為全選)
+                    selected_items = st.multiselect(
+                        f"🔽 篩選 {filter_col} (點擊 'x' 以排除特定項目)", 
+                        options=unique_items, 
+                        default=unique_items,
+                        key=f"filter_{chart_title}" # 給予每個篩選器獨立的 ID
+                    )
+                    # 根據使用者的選擇過濾 DataFrame
+                    filtered_df = df[df[filter_col].isin(selected_items)]
+                else:
+                    filtered_df = df
+                
+                # 顯示過濾後的資料表
+                st.dataframe(filtered_df, use_container_width=True)
                 
             with col_chart:
-                fig, ax = plt.subplots(figsize=(10, 4.5))
-                if hue_col:
-                    sns.barplot(data=df, x=x_col, y=y_col, hue=hue_col, ax=ax, palette=palette)
-                    ax.legend(title=hue_col, bbox_to_anchor=(1.05, 1), loc='upper left')
+                # --- 新增：防呆機制 ---
+                # 如果使用者把所有選項都取消了，顯示提示訊息而不畫圖
+                if filtered_df.empty:
+                    st.warning("⚠️ 已排除所有項目，無資料可供繪圖。")
                 else:
-                    sns.barplot(data=df, x=x_col, y=y_col, ax=ax, palette=palette)
-                
-                # 圖表內的文字全部使用英文
-                ax.set_title(chart_title, fontweight='bold')
-                ax.set_xlabel(x_col)
-                ax.set_ylabel(y_col)
-                plt.xticks(rotation=45, ha='right')
-                plt.tight_layout()
-                st.pyplot(fig)
+                    fig, ax = plt.subplots(figsize=(10, 4.5))
+                    if hue_col:
+                        sns.barplot(data=filtered_df, x=x_col, y=y_col, hue=hue_col, ax=ax, palette=palette)
+                        ax.legend(title=hue_col, bbox_to_anchor=(1.05, 1), loc='upper left')
+                    else:
+                        sns.barplot(data=filtered_df, x=x_col, y=y_col, ax=ax, palette=palette)
+                    
+                    ax.set_title(chart_title, fontweight='bold')
+                    ax.set_xlabel(x_col)
+                    ax.set_ylabel(y_col)
+                    plt.xticks(rotation=45, ha='right')
+                    plt.tight_layout()
+                    st.pyplot(fig)
                 
             st.divider()
 
         # ==========================================
-        # 繪製各區塊 (傳入 中文 UI 標題 與 英文 圖表標題)
+        # 繪製各區塊 (傳入指定的篩選欄位 filter_col)
         # ==========================================
-        st.subheader("📅 每月趨勢分析 (Monthly Trends)")
+        st.subheader("📅 每月趨勢分析 / Monthly Trends")
         render_table_and_chart(
-            "🟦 [Tester Hours] 每月機台總使用時數", 
-            "[Tester Hours] Monthly Total by Tester", 
-            monthly_tester_hours, 'Month', 'Tester Total Hours', hue_col='Tester #'
+            ui_title="🟦 [Tester Hours] 每月機台總使用時數", 
+            chart_title="[Tester Hours] Monthly Total by Tester",
+            df=monthly_tester_hours, x_col='Month', y_col='Tester Total Hours', hue_col='Tester #', filter_col='Tester #'
         )
         render_table_and_chart(
-            "🟧 [Engineering Hours] 每月工程師支援時數", 
-            "[Engineering Hours] Monthly Total by Engineer", 
-            monthly_eng_hours, 'Month', 'Engineering Support Hours', hue_col='Name'
-        )
-
-        st.subheader("🔍 進階維度分析 (Advanced Dimensions)")
-        render_table_and_chart(
-            "🟦 [Tester Hours] 依溫度 (TEMP) 統計機台時數", 
-            "[Tester Hours] Total Hours by TEMP", 
-            temp_hours, 'TEMP', 'Tester Total Hours', palette='Set2'
-        )
-        render_table_and_chart(
-            "🟧 [Engineering Hours] 依機台 (Tester) 統計工程師時數", 
-            "[Engineering Hours] Total Hours by Tester", 
-            eng_tester_hours, 'Tester', 'Engineering Support Hours', palette='magma'
+            ui_title="🟧 [Engineering Hours] 每月工程師支援時數", 
+            chart_title="[Engineering Hours] Monthly Total by Engineer",
+            df=monthly_eng_hours, x_col='Month', y_col='Engineering Support Hours', hue_col='Name', filter_col='Name'
         )
 
-        st.subheader("👤 客戶需求者分析 (Customer Requestor)")
+        st.subheader("🔍 進階維度分析 / Advanced Dimensions")
         render_table_and_chart(
-            "🟦 [Tester Hours] 依客戶需求者統計", 
-            "[Tester Hours] Total Hours by Customer Requestor", 
-            tester_req_hours, 'Customer Requestor', 'Tester Total Hours', palette='viridis'
+            ui_title="🟦 [Tester Hours] 依溫度 (TEMP) 統計機台時數", 
+            chart_title="[Tester Hours] Total Hours by TEMP",
+            df=temp_hours, x_col='TEMP', y_col='Tester Total Hours', filter_col='TEMP', palette='Set2'
         )
         render_table_and_chart(
-            "🟧 [Engineering Hours] 依客戶需求者統計", 
-            "[Engineering Hours] Total Hours by Customer Requestor", 
-            eng_req_hours, 'Customer Requestor', 'Engineering Support Hours', palette='rocket'
+            ui_title="🟧 [Engineering Hours] 依機台 (Tester) 統計工程師時數", 
+            chart_title="[Engineering Hours] Total Hours by Tester",
+            df=eng_tester_hours, x_col='Tester', y_col='Engineering Support Hours', filter_col='Tester', palette='magma'
+        )
+
+        st.subheader("👤 客戶需求者分析 / Customer Requestor Analysis")
+        render_table_and_chart(
+            ui_title="🟦 [Tester Hours] 依客戶需求者統計", 
+            chart_title="[Tester Hours] Total Hours by Customer Requestor",
+            df=tester_req_hours, x_col='Customer Requestor', y_col='Tester Total Hours', filter_col='Customer Requestor', palette='viridis'
+        )
+        render_table_and_chart(
+            ui_title="🟧 [Engineering Hours] 依客戶需求者統計", 
+            chart_title="[Engineering Hours] Total Hours by Customer Requestor",
+            df=eng_req_hours, x_col='Customer Requestor', y_col='Engineering Support Hours', filter_col='Customer Requestor', palette='rocket'
         )
 
     except ValueError as ve:
