@@ -4,6 +4,13 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import re
 
+import matplotlib as mpl 
+
+# === 新增這段來修復中文亂碼 ===
+mpl.rcParams['font.sans-serif'] = ['Microsoft JhengHei', 'PingFang TC', 'Arial Unicode MS', 'SimHei']
+mpl.rcParams['axes.unicode_minus'] = False 
+# ============================
+
 # ==========================================
 # 定義：時數分割與均分函數
 # ==========================================
