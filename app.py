@@ -72,4 +72,4 @@ if uploaded_file is not None:
 
     except ValueError as ve:
         # 捕捉找不到特定 Sheet (分頁) 的錯誤
-        st.error(f"讀取失敗：請確認上傳的 Excel 檔案內包含 `Tester Hours` 與 `Engineering Hours` 這兩個分頁。\n\n詳細錯誤：
+        st.error(f"讀取失敗：請確認上傳的 Excel 檔案內包含 `Tester Hours` 與 `Engineering Hours` 這兩個分頁。\n\n詳細錯誤：{ve}")
