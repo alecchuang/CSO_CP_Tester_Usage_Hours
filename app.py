@@ -119,11 +119,12 @@ st.title("📊 機台與工程師時數進階分析儀表板")
 
 with st.expander("🚀 版本更新紀錄 / Release Notes (點擊展開)"):
     st.markdown("""
-    * **v24 (最新版)**: 🌟 **排版邏輯調整**！依據需求，將「[Engineering Hours] 每月工程師時數」移至「進階維度分析」，並將「[Engineering Hours] 依機台統計」移至「每月趨勢分析」，讓資料分佈更符合實務觀察邏輯。
-    * **v23**: 🌟 動態 KPI 目標設定！將最低標時數的「機台數量」設定移至左側控制面板，使用者可自行調整，KPI 達標數據將即時同步更新。
-    * **v22**: 🌟 優化明細展開範圍！專注於「每月趨勢」與「進階維度」，移除不必要的頁面展開，減少雜訊。
+    * **v25 (最新版)**: 🌟 **標題與維度微調**！將「進階維度分析」重新命名為更貼切的「進階維度分析 (TEMP/ENG Member)」，並為「[Engineering Hours] 依機台統計」補上月份 (Month) 維度，讓分析更具時間脈絡。
+    * **v24**: 🌟 排版邏輯調整！將「每月工程師時數」移至「進階維度分析」，並將「依機台統計」移至「每月趨勢分析」。
+    * **v23**: 🌟 動態 KPI 目標設定！最低標時數的「機台數量」設定移至左側，可自行調整並即時同步。
+    * **v22**: 🌟 優化明細展開範圍！專注於「每月趨勢」與「進階維度」，移除不必要的頁面展開。
     * **v21**: 🌟 時數結構展開功能！總時數欄位升級為「點擊展開」格式，可直接檢視 CSO 與 Gchip 貢獻明細。
-    * **v20**: 🌟 無縫導覽與KPI升級！改用原生「水平導覽列 (Radio Navigation)」。並新增以月份天數動態計算的「最低標使用時數」指標。
+    * **v20**: 🌟 無縫導覽與KPI升級！改用原生水平導覽列，新增動態計算的「最低標使用時數」指標。
     * **v19**: 將超大頁籤底色更改為專業的淺灰藍色。
     * **v18**: 頁籤視覺強化與修復。
     * **v17**: UX 介面大改版！導入側邊欄收納設定、主畫面頂部加入 KPI 看板。
@@ -132,16 +133,16 @@ with st.expander("🚀 版本更新紀錄 / Release Notes (點擊展開)"):
     * **v14**: 新增「📋 任務說明」展開查詢功能。
     * **v13**: 視覺風格優化！轉換為專業風格 (Professional Corporate Theme)。
     * **v12**: 導入深色科技感主題 (Dark Tech Theme)。
-    * **v11**: 新增版本紀錄摺疊面板，優化 UI 引導說明。
-    * **v10**: 加入「團隊成員自定義」功能，支援 CSO/Gchip 互斥選擇。
-    * **v9**: 加入「動態篩選器 (Multiselect)」，圖表隨篩選結果即時連動。
-    * **v8**: 解決中文亂碼問題，圖表內部文字統一純英文。
-    * **v7**: 介面大改版，採用「左表格、右圖表」並排設計。
-    * **v6**: 核心演算法更新，導入「多單位分割與時數均分邏輯」。
+    * **v11**: 新增版本紀錄摺疊面板。
+    * **v10**: 加入「團隊成員自定義」功能。
+    * **v9**: 加入「動態篩選器 (Multiselect)」。
+    * **v8**: 解決中文亂碼問題，圖表純英文。
+    * **v7**: 介面大改版，左表格、右圖表。
+    * **v6**: 導入「多單位分割與時數均分邏輯」。
     * **v5**: 擴充分析維度。
     * **v4**: 加入檔案上傳功能。
-    * **v3**: 轉換為 Streamlit Web App 互動式架構。
-    * **v2**: 加入 Engineering Hours 分頁數據解析。
+    * **v3**: 轉換為 Streamlit Web App。
+    * **v2**: 加入 Engineering Hours 分頁。
     * **v1**: 初始版本。
     """)
 
@@ -276,6 +277,7 @@ if uploaded_file is not None:
                     selected_items = st.multiselect(f"🔽 篩選 {filter_col}", options=unique_items, default=unique_items, key=f"filter_{chart_title}")
                     filtered_df = df[df[filter_col].isin(selected_items)]
                 
+                # 動態配置表格欄位屬性
                 column_config = {
                     "Task Details": st.column_config.TextColumn(
                         "📋 任務說明 (點擊展開)", 
@@ -284,9 +286,10 @@ if uploaded_file is not None:
                     )
                 }
                 
+                # 只有當 show_breakdown 為 True 時，才隱藏原數字欄並顯示文字明細欄
                 if show_breakdown:
                     breakdown_col_name = f"⏱️ {y_col} (點擊展開)"
-                    column_config[y_col] = None  
+                    column_config[y_col] = None  # 隱藏原數字欄
                     column_config[breakdown_col_name] = st.column_config.TextColumn(
                         breakdown_col_name,
                         help="點擊儲存格，即可查看該時數的 CSO / Gchip 貢獻拆分",
@@ -323,12 +326,13 @@ if uploaded_file is not None:
         # ==========================================
         st.markdown("### 🔍 切換分析視角")
         
+        # 🌟 變更選項名稱
         selected_view = st.radio(
             label="選擇分析維度",
             options=[
                 "🏢 團隊歸屬分析 (Team)", 
                 "📅 每月趨勢分析 (Monthly)", 
-                "🌡️ 進階維度分析 (TEMP/Tester)", 
+                "🌡️ 進階維度分析 (TEMP/ENG Member)", 
                 "👤 客戶需求者分析 (Requestor)"
             ],
             horizontal=True,
@@ -348,16 +352,16 @@ if uploaded_file is not None:
             monthly_tester_hours = aggregate_data(df_tester, ['Month', 'Tester #'], 'Tester Total Hours')
             render_table_and_chart("🟦 [Tester Hours] 每月機台時數", "[Tester Hours] Monthly by Tester", monthly_tester_hours, 'Month', 'Tester Total Hours', hue_col='Tester #', filter_col='Tester #', custom_palette='deep')
             
-            # [Engineering Hours] 依機台 (Tester) 統計 (從進階維度分頁移至此處)
-            eng_tester_hours = aggregate_data(df_eng, 'Tester', 'Engineering Support Hours')
-            render_table_and_chart("🟧 [Engineering Hours] 依機台 (Tester) 統計", "[Engineering Hours] Total by Tester", eng_tester_hours, 'Tester', 'Engineering Support Hours', filter_col='Tester', custom_palette='Oranges_r')
+            # 🌟 修改：加入 Month 欄位進行雙維度聚合
+            eng_tester_hours = aggregate_data(df_eng, ['Month', 'Tester'], 'Engineering Support Hours')
+            render_table_and_chart("🟧 [Engineering Hours] 每月依機台 (Tester) 統計", "[Engineering Hours] Monthly by Tester", eng_tester_hours, 'Month', 'Engineering Support Hours', hue_col='Tester', filter_col='Tester', custom_palette='Oranges_r')
 
-        elif selected_view == "🌡️ 進階維度分析 (TEMP/Tester)":
+        elif selected_view == "🌡️ 進階維度分析 (TEMP/ENG Member)":
             # [Tester Hours] 依溫度 (TEMP) 統計
             temp_hours = aggregate_data(df_tester, 'TEMP', 'Tester Total Hours')
             render_table_and_chart("🟦 [Tester Hours] 依溫度 (TEMP) 統計", "[Tester Hours] Total by TEMP", temp_hours, 'TEMP', 'Tester Total Hours', filter_col='TEMP', custom_palette='Blues_r')
             
-            # [Engineering Hours] 每月工程師時數 (從每月趨勢分頁移至此處)
+            # [Engineering Hours] 每月工程師時數
             monthly_eng_hours = aggregate_data(df_eng, ['Month', 'Name'], 'Engineering Support Hours')
             render_table_and_chart("🟧 [Engineering Hours] 每月工程師時數", "[Engineering Hours] Monthly by Engineer", monthly_eng_hours, 'Month', 'Engineering Support Hours', hue_col='Name', filter_col='Name', custom_palette='muted')
 
