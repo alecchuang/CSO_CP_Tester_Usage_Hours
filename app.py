@@ -20,9 +20,8 @@ if uploaded_file is not None:
         df_eng_raw = pd.read_excel(uploaded_file, sheet_name="Engineering Hours")
 
         # ==========================================
-        # 處理 Tester Hours 資料
+        # 處理 [Tester Hours] 資料
         # ==========================================
-        # 提取需要的欄位 (包含新加入的 TEMP 與 Customer Requestor)
         df_tester = df_tester_raw[['Date', 'Tester #', 'Tester Total Hours', 'TEMP', 'Customer Requestor']].copy()
         df_tester.dropna(subset=['Date', 'Tester #', 'Tester Total Hours'], how='all', inplace=True)
         df_tester['Date'] = pd.to_datetime(df_tester['Date'], errors='coerce')
@@ -30,37 +29,42 @@ if uploaded_file is not None:
         df_tester['Month'] = df_tester['Date'].dt.to_period('M').astype(str)
         df_tester['Tester Total Hours'] = pd.to_numeric(df_tester['Tester Total Hours'], errors='coerce').fillna(0)
 
-        # 基礎圖表：依月份與機台
+        # 1. 依月份與機台
         monthly_tester_hours = df_tester.groupby(['Month', 'Tester #'])['Tester Total Hours'].sum().reset_index()
         
-        # 新增圖表 1：依 TEMP 累加
-        df_tester['TEMP'] = df_tester['TEMP'].astype(str) # 轉字串避免被當作連續數值
+        # 2. 依 TEMP
+        df_tester['TEMP'] = df_tester['TEMP'].astype(str)
         temp_hours = df_tester.groupby('TEMP')['Tester Total Hours'].sum().reset_index()
-        temp_hours = temp_hours.sort_values('Tester Total Hours', ascending=False) # 依照時數排序
+        temp_hours = temp_hours.sort_values('Tester Total Hours', ascending=False)
         
-        # 新增圖表 2：依 Customer Requestor 累加
+        # 3. 依 Customer Requestor (Tester)
         df_tester['Customer Requestor'] = df_tester['Customer Requestor'].astype(str)
-        req_hours = df_tester.groupby('Customer Requestor')['Tester Total Hours'].sum().reset_index()
-        req_hours = req_hours.sort_values('Tester Total Hours', ascending=False)
+        tester_req_hours = df_tester.groupby('Customer Requestor')['Tester Total Hours'].sum().reset_index()
+        tester_req_hours = tester_req_hours.sort_values('Tester Total Hours', ascending=False)
 
         # ==========================================
-        # 處理 Engineering Hours 資料
+        # 處理 [Engineering Hours] 資料
         # ==========================================
-        # 提取需要的欄位 (包含新加入的 Tester)
-        df_eng = df_eng_raw[['Date', 'Name', 'Engineering Support Hours', 'Tester']].copy()
+        # 加入 Customer Requestor 欄位
+        df_eng = df_eng_raw[['Date', 'Name', 'Engineering Support Hours', 'Tester', 'Customer Requestor']].copy()
         df_eng.dropna(subset=['Date', 'Name', 'Engineering Support Hours'], how='all', inplace=True)
         df_eng['Date'] = pd.to_datetime(df_eng['Date'], errors='coerce')
         df_eng.dropna(subset=['Date'], inplace=True)
         df_eng['Month'] = df_eng['Date'].dt.to_period('M').astype(str)
         df_eng['Engineering Support Hours'] = pd.to_numeric(df_eng['Engineering Support Hours'], errors='coerce').fillna(0)
 
-        # 基礎圖表：依月份與工程師
+        # 1. 依月份與工程師
         monthly_eng_hours = df_eng.groupby(['Month', 'Name'])['Engineering Support Hours'].sum().reset_index()
         
-        # 新增圖表 3：依 Tester (機台) 累加
+        # 2. 依 Tester (機台)
         df_eng['Tester'] = df_eng['Tester'].astype(str)
         eng_tester_hours = df_eng.groupby('Tester')['Engineering Support Hours'].sum().reset_index()
         eng_tester_hours = eng_tester_hours.sort_values('Engineering Support Hours', ascending=False)
+
+        # 3. 新增: 依 Customer Requestor (Engineering)
+        df_eng['Customer Requestor'] = df_eng['Customer Requestor'].astype(str)
+        eng_req_hours = df_eng.groupby('Customer Requestor')['Engineering Support Hours'].sum().reset_index()
+        eng_req_hours = eng_req_hours.sort_values('Engineering Support Hours', ascending=False)
 
         st.success("資料解析完成！圖表已生成。")
         st.divider()
@@ -70,14 +74,15 @@ if uploaded_file is not None:
         # ==========================================
         sns.set_theme(style="whitegrid")
 
-        # 為了讓版面更好看，我們將原本的兩張時間趨勢圖放在全寬度
+        # --- Row 1: 每月趨勢 ---
         st.subheader("📅 每月趨勢分析")
-        
         col1, col2 = st.columns(2)
+        
         with col1:
-            st.markdown("##### 每月機台總使用時數 (Tester Hours)")
+            st.markdown("##### 🟦 [Tester Hours] 每月機台總使用時數")
             fig1, ax1 = plt.subplots(figsize=(10, 5))
             sns.barplot(data=monthly_tester_hours, x='Month', y='Tester Total Hours', hue='Tester #', ax=ax1)
+            ax1.set_title('[Tester Hours] Monthly Total by Tester', fontweight='bold')
             ax1.set_xlabel('Month')
             ax1.set_ylabel('Total Hours')
             ax1.legend(title='Tester #', bbox_to_anchor=(1.05, 1), loc='upper left')
@@ -85,9 +90,10 @@ if uploaded_file is not None:
             st.pyplot(fig1)
 
         with col2:
-            st.markdown("##### 每月工程師支援時數 (Engineering Hours)")
+            st.markdown("##### 🟧 [Engineering Hours] 每月工程師支援時數")
             fig2, ax2 = plt.subplots(figsize=(10, 5))
             sns.barplot(data=monthly_eng_hours, x='Month', y='Engineering Support Hours', hue='Name', ax=ax2)
+            ax2.set_title('[Engineering Hours] Monthly Total by Engineer', fontweight='bold')
             ax2.set_xlabel('Month')
             ax2.set_ylabel('Total Hours')
             ax2.legend(title='Engineer Name', bbox_to_anchor=(1.05, 1), loc='upper left', ncol=2)
@@ -96,41 +102,60 @@ if uploaded_file is not None:
 
         st.divider()
 
-        # 將新的三張圖表排列在下方
-        st.subheader("🔍 進階維度分析")
-
+        # --- Row 2: 設備與環境維度 ---
+        st.subheader("🔍 進階維度分析 (溫度與機台)")
         col3, col4 = st.columns(2)
         
         with col3:
-            # 新圖表 1: 依 TEMP
-            st.markdown("##### 🌡️ 依溫度 (TEMP) 統計機台總時數")
+            st.markdown("##### 🟦 [Tester Hours] 依溫度 (TEMP) 統計機台時數")
             fig3, ax3 = plt.subplots(figsize=(10, 5))
             sns.barplot(data=temp_hours, x='TEMP', y='Tester Total Hours', ax=ax3, palette='Set2')
+            ax3.set_title('[Tester Hours] Total Hours by TEMP', fontweight='bold')
             ax3.set_xlabel('TEMP')
             ax3.set_ylabel('Total Hours')
             plt.tight_layout()
             st.pyplot(fig3)
 
         with col4:
-            # 新圖表 3: 依 Tester 統計工程師時數
-            st.markdown("##### 🛠️ 依機台 (Tester) 統計工程師支援總時數")
+            st.markdown("##### 🟧 [Engineering Hours] 依機台 (Tester) 統計工程師時數")
             fig5, ax5 = plt.subplots(figsize=(10, 5))
             sns.barplot(data=eng_tester_hours, x='Tester', y='Engineering Support Hours', ax=ax5, palette='magma')
+            ax5.set_title('[Engineering Hours] Total Hours by Tester', fontweight='bold')
             ax5.set_xlabel('Tester')
             ax5.set_ylabel('Total Hours')
-            plt.xticks(rotation=45, ha='right') # 旋轉 X 軸標籤以免擠在一起
+            plt.xticks(rotation=45, ha='right')
             plt.tight_layout()
             st.pyplot(fig5)
 
-        # 新圖表 2: 依 Customer Requestor (因為人名可能很長，單獨給他一整行的寬度)
-        st.markdown("##### 👤 依客戶需求者 (Customer Requestor) 統計機台總時數")
-        fig4, ax4 = plt.subplots(figsize=(12, 5))
-        sns.barplot(data=req_hours, x='Customer Requestor', y='Tester Total Hours', ax=ax4, palette='viridis')
-        ax4.set_xlabel('Customer Requestor')
-        ax4.set_ylabel('Total Hours')
-        plt.xticks(rotation=45, ha='right') # 將名字傾斜 45 度避免重疊
-        plt.tight_layout()
-        st.pyplot(fig4)
+        st.divider()
+
+        # --- Row 3: 客戶需求者維度 ---
+        st.subheader("👤 客戶需求者分析 (Customer Requestor)")
+        col5, col6 = st.columns(2)
+
+        with col5:
+            st.markdown("##### 🟦 [Tester Hours] 依客戶需求者統計")
+            fig4, ax4 = plt.subplots(figsize=(10, 5))
+            sns.barplot(data=tester_req_hours, x='Customer Requestor', y='Tester Total Hours', ax=ax4, palette='viridis')
+            ax4.set_title('[Tester Hours] Total Hours by Customer Requestor', fontweight='bold')
+            ax4.set_xlabel('Customer Requestor')
+            ax4.set_ylabel('Total Hours')
+            plt.xticks(rotation=45, ha='right')
+            plt.tight_layout()
+            st.pyplot(fig4)
+
+        with col6:
+            # 新增的第六張圖表
+            st.markdown("##### 🟧 [Engineering Hours] 依客戶需求者統計")
+            fig6, ax6 = plt.subplots(figsize=(10, 5))
+            # 使用不同的配色 (rocket) 以區分
+            sns.barplot(data=eng_req_hours, x='Customer Requestor', y='Engineering Support Hours', ax=ax6, palette='rocket')
+            ax6.set_title('[Engineering Hours] Total Hours by Customer Requestor', fontweight='bold')
+            ax6.set_xlabel('Customer Requestor')
+            ax6.set_ylabel('Total Hours')
+            plt.xticks(rotation=45, ha='right')
+            plt.tight_layout()
+            st.pyplot(fig6)
 
     except ValueError as ve:
         st.error(f"讀取失敗：請確認上傳的 Excel 檔案內包含所需的欄位與分頁。\n\n詳細錯誤：{ve}")
