@@ -68,41 +68,49 @@ if uploaded_file is not None:
         st.divider()
 
         # ==========================================
-        # 🌟 團隊成員自定義區塊 (Team Definitions)
+        # 🌟 團隊成員自定義區塊 (加入互斥防呆邏輯)
         # ==========================================
         st.subheader("⚙️ 團隊成員定義 / Team Definitions")
         
         # 找出數據中出現過的所有 Requestor 名稱
         all_requestors = sorted(list(set(df_tester['Customer Requestor'].unique()) | set(df_eng['Customer Requestor'].unique())))
         
+        # 1. 透過 session_state 初始化預設名單 (只在第一次載入時執行)
+        if 'cso_selection' not in st.session_state:
+            st.session_state.cso_selection = [name for name in ['Alec'] if name in all_requestors]
+        if 'gchip_selection' not in st.session_state:
+            st.session_state.gchip_selection = [name for name in ['Rajesh', 'Louis', 'Chi-Chang'] if name in all_requestors]
+
+        # 2. 動態計算可選清單 (排除對方已經選擇的人員)
+        avail_for_cso = [x for x in all_requestors if x not in st.session_state.gchip_selection]
+        avail_for_gchip = [x for x in all_requestors if x not in st.session_state.cso_selection]
+
         col_cso_config, col_gchip_config = st.columns(2)
         
         with col_cso_config:
-            # 預設 Alec 為 CSO (若存在於數據中)
-            default_cso = [name for name in ['Alec'] if name in all_requestors]
+            # 透過 key 綁定 session_state，不需要再寫 default
             cso_members = st.multiselect(
                 "定義 CSO 成員 (CSO Members)", 
-                options=all_requestors, 
-                default=default_cso
+                options=avail_for_cso, 
+                key="cso_selection"
             )
             
         with col_gchip_config:
-            # 預設 Rajesh, Louis, Chi-Chang 為 Gchip (若存在於數據中)
-            default_gchip = [name for name in ['Rajesh', 'Louis', 'Chi-Chang'] if name in all_requestors]
+            # 透過 key 綁定 session_state
             gchip_members = st.multiselect(
                 "定義 Gchip 成員 (Gchip Members)", 
-                options=all_requestors, 
-                default=default_gchip
+                options=avail_for_gchip, 
+                key="gchip_selection"
             )
 
-        # 套用團隊歸屬邏輯 (基於使用者剛才的定義)
+        # 套用團隊歸屬邏輯
         def map_team(name):
             if name in cso_members:
                 return 'CSO'
             elif name in gchip_members:
                 return 'Gchip'
             else:
-                return 'Other/Unassigned'
+                return 'Other / Unassigned'
 
         df_tester['Team'] = df_tester['Customer Requestor'].apply(map_team)
         df_eng['Team'] = df_eng['Customer Requestor'].apply(map_team)
@@ -142,12 +150,11 @@ if uploaded_file is not None:
             st.divider()
 
         # ==========================================
-        # 繪製各區塊 (團隊分析移到最上方)
+        # 繪製各區塊 
         # ==========================================
         
         # --- 1. 團隊歸屬分析 (CSO vs Gchip) ---
         st.subheader("🏢 團隊歸屬分析 / Team Analysis (CSO vs Gchip)")
-        
         team_tester_hours = df_tester.groupby('Team')['Tester Total Hours'].sum().round(2).reset_index().sort_values('Tester Total Hours', ascending=False)
         team_eng_hours = df_eng.groupby('Team')['Engineering Support Hours'].sum().round(2).reset_index().sort_values('Engineering Support Hours', ascending=False)
 
@@ -178,7 +185,7 @@ if uploaded_file is not None:
             df=monthly_eng_hours, x_col='Month', y_col='Engineering Support Hours', hue_col='Name', filter_col='Name'
         )
 
-        # --- 3. 進階維度分析 (溫度與機台) ---
+        # --- 3. 進階維度分析 ---
         st.subheader("🔍 進階維度分析 / Advanced Dimensions")
         temp_hours = df_tester.groupby('TEMP')['Tester Total Hours'].sum().round(2).reset_index().sort_values('Tester Total Hours', ascending=False)
         eng_tester_hours = df_eng.groupby('Tester')['Engineering Support Hours'].sum().round(2).reset_index().sort_values('Engineering Support Hours', ascending=False)
