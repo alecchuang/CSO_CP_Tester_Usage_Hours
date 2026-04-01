@@ -119,7 +119,8 @@ st.title("📊 機台與工程師時數進階分析儀表板")
 
 with st.expander("🚀 版本更新紀錄 / Release Notes (點擊展開)"):
     st.markdown("""
-    * **v22 (最新版)**: 🌟 **優化明細展開範圍**！為了讓報表更聚焦，將「時數比例展開功能」專注應用於「每月趨勢分析」與「進階維度分析」，並移除不必要的「客戶需求者」與「團隊歸屬」頁面展開，減少畫面雜訊。
+    * **v23 (最新版)**: 🌟 **動態 KPI 目標設定**！將最低標準使用時數的「機台數量」設定移至左側控制面板，使用者可自行調整機台總數，KPI 看板的目標時數將即時同步更新。
+    * **v22**: 🌟 優化明細展開範圍！專注於「每月趨勢」與「進階維度」，移除不必要的頁面展開，減少雜訊。
     * **v21**: 🌟 時數結構展開功能！總時數欄位升級為「點擊展開」格式，可直接檢視 CSO 與 Gchip 貢獻明細。
     * **v20**: 🌟 無縫導覽與KPI升級！改用原生「水平導覽列 (Radio Navigation)」。並新增以月份天數動態計算的「最低標使用時數」指標。
     * **v19**: 將超大頁籤底色更改為專業的淺灰藍色。
@@ -152,11 +153,16 @@ with st.sidebar:
     st.info("""
     **💡 操作指南：**
     1. 於下方上傳 Excel 檔案。
-    2. 定義 CSO 與 Gchip 團隊成員。
+    2. 設定 KPI 的機台總數與團隊成員。
     3. 在右側主畫面選擇不同分析維度。
     """)
     
     uploaded_file = st.file_uploader("📂 上傳 Excel 紀錄表", type=["xlsx", "xls"])
+    
+    st.divider()
+    st.subheader("🎯 KPI 目標設定")
+    # 🌟 新增：讓使用者可以自行輸入機台數量，預設為 10
+    tester_count = st.number_input("設定機台總數量 (供計算最低標時數)", min_value=1, value=10, step=1)
 
 if uploaded_file is not None:
     try:
@@ -228,8 +234,8 @@ if uploaded_file is not None:
         
         if total_days == 0: total_days = 30
             
-        tester_count = 10 
         target_utilization = 0.5
+        # 將原本寫死的 10 替換為左側邊欄取得的變數 tester_count
         min_required_hours = total_days * 24 * tester_count * target_utilization
         delta_val = total_tester_hrs - min_required_hours
         
@@ -335,28 +341,24 @@ if uploaded_file is not None:
         st.markdown("<br>", unsafe_allow_html=True)
 
         if selected_view == "🏢 團隊歸屬分析 (Team)":
-            # 關閉明細展開功能 (show_breakdown=False)
             team_tester_hours = aggregate_data(df_tester, 'Team', 'Tester Total Hours', show_breakdown=False)
             team_eng_hours = aggregate_data(df_eng, 'Team', 'Engineering Support Hours', show_breakdown=False)
             render_table_and_chart("🟦 [Tester Hours] 依團隊統計", "[Tester Hours] Total by Team", team_tester_hours, 'Team', 'Tester Total Hours', filter_col='Team', custom_palette=['#2B5B84', '#E67E22', '#95A5A6'], show_breakdown=False)
             render_table_and_chart("🟧 [Engineering Hours] 依團隊統計", "[Engineering Hours] Total by Team", team_eng_hours, 'Team', 'Engineering Support Hours', filter_col='Team', custom_palette=['#2980B9', '#D35400', '#7F8C8D'], show_breakdown=False)
 
         elif selected_view == "📅 每月趨勢分析 (Monthly)":
-            # 啟用明細展開功能 (預設為 True)
             monthly_tester_hours = aggregate_data(df_tester, ['Month', 'Tester #'], 'Tester Total Hours')
             monthly_eng_hours = aggregate_data(df_eng, ['Month', 'Name'], 'Engineering Support Hours')
             render_table_and_chart("🟦 [Tester Hours] 每月機台時數", "[Tester Hours] Monthly by Tester", monthly_tester_hours, 'Month', 'Tester Total Hours', hue_col='Tester #', filter_col='Tester #', custom_palette='deep')
             render_table_and_chart("🟧 [Engineering Hours] 每月工程師時數", "[Engineering Hours] Monthly by Engineer", monthly_eng_hours, 'Month', 'Engineering Support Hours', hue_col='Name', filter_col='Name', custom_palette='muted')
 
         elif selected_view == "🌡️ 進階維度分析 (TEMP/Tester)":
-            # 啟用明細展開功能 (預設為 True)
             temp_hours = aggregate_data(df_tester, 'TEMP', 'Tester Total Hours')
             eng_tester_hours = aggregate_data(df_eng, 'Tester', 'Engineering Support Hours')
             render_table_and_chart("🟦 [Tester Hours] 依溫度 (TEMP) 統計", "[Tester Hours] Total by TEMP", temp_hours, 'TEMP', 'Tester Total Hours', filter_col='TEMP', custom_palette='Blues_r')
             render_table_and_chart("🟧 [Engineering Hours] 依機台 (Tester) 統計", "[Engineering Hours] Total by Tester", eng_tester_hours, 'Tester', 'Engineering Support Hours', filter_col='Tester', custom_palette='Oranges_r')
 
         elif selected_view == "👤 客戶需求者分析 (Requestor)":
-            # 關閉明細展開功能 (show_breakdown=False)
             tester_req_hours = aggregate_data(df_tester, 'Customer Requestor', 'Tester Total Hours', show_breakdown=False)
             eng_req_hours = aggregate_data(df_eng, 'Customer Requestor', 'Engineering Support Hours', show_breakdown=False)
             render_table_and_chart("🟦 [Tester Hours] 依客戶統計", "[Tester Hours] Total by Requestor", tester_req_hours, 'Customer Requestor', 'Tester Total Hours', filter_col='Customer Requestor', custom_palette='Set2', show_breakdown=False)
