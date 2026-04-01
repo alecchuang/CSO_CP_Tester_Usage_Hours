@@ -56,6 +56,7 @@ st.set_page_config(page_title="Hours Analysis Dashboard", layout="wide")
 # ==========================================
 # 🎨 注入自訂 CSS 來強化 Tabs (頁籤) 的視覺效果
 # ==========================================
+# 更改為更專業的顏色：淺灰藍色 (#eef2f5) 取代白色 (#ffffff)
 st.markdown("""
 <style>
     /* 讓整個 Tab 列表區塊有背景色和圓角 */
@@ -66,11 +67,11 @@ st.markdown("""
         border-radius: 12px 12px 0 0;
         border-bottom: 3px solid #dee2e6;
     }
-    /* 強化每個獨立 Tab 的樣式 */
+    /* 強化每個獨立 Tab 的樣式 - 替換為專業的淺灰藍色 */
     div[data-baseweb="tab"] {
         height: 55px;
         padding: 0 25px;
-        background-color: #ffffff;
+        background-color: #eef2f5; 
         border: 1px solid #dee2e6;
         border-bottom: none;
         border-radius: 10px 10px 0 0;
@@ -81,7 +82,7 @@ st.markdown("""
     }
     /* 游標移上去時的特效 */
     div[data-baseweb="tab"]:hover {
-        background-color: #e9ecef;
+        background-color: #dbe4eb;
         color: #000000;
     }
     /* 當 Tab 被選中時的高亮特效 (商務藍) */
@@ -102,8 +103,9 @@ st.title("📊 機台與工程師時數進階分析儀表板")
 
 with st.expander("🚀 版本更新紀錄 / Release Notes (點擊展開)"):
     st.markdown("""
-    * **v18 (最新版)**: 🌟 **頁籤視覺強化與修復**！透過自訂 CSS 大幅突顯 Tab 選擇區塊，增強點擊引導；並完整修復、保留 v1 至 v18 的完整版本更新紀錄。
-    * **v17**: 🌟 **UX 介面大改版**！導入側邊欄 (Sidebar) 收納設定、主畫面頂部加入 KPI 數據看板，並使用「頁籤 (Tabs)」分類圖表。
+    * **v19 (最新版)**: 🌟 **介面與數據優化**！將超大頁籤底色更改為專業的淺灰藍色；並在核心數據總覽新增「最低標使用時數」指標 (機台數預設 10 台，每月基本要求 50% 稼動率)。
+    * **v18**: 🌟 頁籤視覺強化與修復！透過自訂 CSS 大幅突顯 Tab 選擇區塊，增強點擊引導；並完整修復、保留 v1 至 v18 的完整版本更新紀錄。
+    * **v17**: 🌟 UX 介面大改版！導入側邊欄 (Sidebar) 收納設定、主畫面頂部加入 KPI 數據看板，並使用「頁籤 (Tabs)」分類圖表。
     * **v16**: 🛡️ 系統穩定度升級！修復 aggregate_data KeyError，強化空資料防呆機制。
     * **v15**: 📝 任務明細自動使用分隔線將 CSO 與 Gchip 拆分顯示，權責更清晰。
     * **v14**: 新增「📋 任務說明」展開查詢功能，可直接在表格內查看原始工作內容。
@@ -194,15 +196,50 @@ if uploaded_file is not None:
         # 📈 主畫面：頂部 KPI 總覽看板
         # ==========================================
         st.subheader("📌 核心數據總覽 (Executive Summary)")
-        total_tester_hrs = df_tester['Tester Total Hours'].sum()
-        total_eng_hrs = df_eng['Engineering Support Hours'].sum()
         
+        # 1. 總機台使用時數
+        total_tester_hrs = df_tester['Tester Total Hours'].sum()
+        
+        # 2. 最低標使用時數計算邏輯
+        unique_months = df_tester['Month'].dropna().unique()
+        total_days = 0
+        for m in unique_months:
+            try:
+                # 取得該月份(例如 '2026-02')的總天數(28天)並累加
+                total_days += pd.Period(m).days_in_month
+            except:
+                pass
+        
+        # 防呆機制：若抓不到月份天數，則預設給 30 天
+        if total_days == 0: total_days = 30
+            
+        tester_count = 10      # 暫訂 10 台機台
+        target_utilization = 0.5 # 目標稼動率 50%
+        # 公式: 總天數 * 24小時 * 10台 * 50%
+        min_required_hours = total_days * 24 * tester_count * target_utilization
+        
+        # 計算與達標時數的差異
+        delta_val = total_tester_hrs - min_required_hours
+        
+        # 3. 其他指標
+        total_eng_hrs = df_eng['Engineering Support Hours'].sum()
         top_tester = df_tester.groupby('Tester #')['Tester Total Hours'].sum().idxmax() if not df_tester.empty else "N/A"
         
-        kpi1, kpi2, kpi3 = st.columns(3)
-        kpi1.metric(label="🖥️ 總機台使用時數 (Tester Hours)", value=f"{total_tester_hrs:,.1f} hrs")
-        kpi2.metric(label="🧑‍🔧 總工程支援時數 (Eng Hours)", value=f"{total_eng_hrs:,.1f} hrs")
-        kpi3.metric(label="🔥 最高用量機台 (Top Tester)", value=f"{top_tester}")
+        # 呈現 4 個指標
+        kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+        
+        kpi1.metric(label="🖥️ 總機台使用時數", value=f"{total_tester_hrs:,.1f} hrs")
+        
+        # 使用 delta 屬性，當總機台使用時數 >= 最低標時，右邊會顯示綠色的正值；反之顯示紅色的負值
+        kpi2.metric(
+            label=f"🎯 最低標使用時數 ({tester_count}台/50%)", 
+            value=f"{min_required_hours:,.0f} hrs", 
+            delta=f"{delta_val:,.1f} hrs", 
+            delta_color="normal"
+        )
+        
+        kpi3.metric(label="🧑‍🔧 總工程支援時數", value=f"{total_eng_hrs:,.1f} hrs")
+        kpi4.metric(label="🔥 最高用量機台", value=f"{top_tester}")
         
         st.divider()
 
@@ -251,7 +288,7 @@ if uploaded_file is not None:
         # ==========================================
         # 📑 強化版頁籤切換區塊 (Tabs)
         # ==========================================
-        st.markdown("<br>", unsafe_allow_html=True) # 增加一點上方留白
+        st.markdown("<br>", unsafe_allow_html=True) 
         
         tab1, tab2, tab3, tab4 = st.tabs([
             "🏢 團隊歸屬分析", 
@@ -296,5 +333,4 @@ if uploaded_file is not None:
         st.error(f"執行時發生錯誤: {e}")
 
 else:
-    # 右側主畫面在未上傳檔案時的提醒
     st.info("👈 請於左側邊欄 (Sidebar) 上傳 Excel 檔案以開始分析。")
