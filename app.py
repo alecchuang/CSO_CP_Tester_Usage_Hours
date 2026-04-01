@@ -55,9 +55,15 @@ if uploaded_file is not None:
         for col in ['Tester #', 'TEMP', 'Customer Requestor']:
             df_tester = split_and_distribute(df_tester, target_col=col, hours_col='Tester Total Hours')
 
+        # 基礎維度匯總
         monthly_tester_hours = df_tester.groupby(['Month', 'Tester #'])['Tester Total Hours'].sum().round(2).reset_index()
         temp_hours = df_tester.groupby('TEMP')['Tester Total Hours'].sum().round(2).reset_index().sort_values('Tester Total Hours', ascending=False)
         tester_req_hours = df_tester.groupby('Customer Requestor')['Tester Total Hours'].sum().round(2).reset_index().sort_values('Tester Total Hours', ascending=False)
+
+        # 🌟 新增：團隊歸屬分析 (CSO vs Gchip)
+        # 只要名字是 Alec 就歸類為 CSO，其餘皆為 Gchip
+        df_tester['Team'] = df_tester['Customer Requestor'].apply(lambda x: 'CSO' if str(x).strip() == 'Alec' else 'Gchip')
+        team_tester_hours = df_tester.groupby('Team')['Tester Total Hours'].sum().round(2).reset_index().sort_values('Tester Total Hours', ascending=False)
 
         # ==========================================
         # 處理 [Engineering Hours] 資料
@@ -72,15 +78,20 @@ if uploaded_file is not None:
         for col in ['Name', 'Tester', 'Customer Requestor']:
             df_eng = split_and_distribute(df_eng, target_col=col, hours_col='Engineering Support Hours')
 
+        # 基礎維度匯總
         monthly_eng_hours = df_eng.groupby(['Month', 'Name'])['Engineering Support Hours'].sum().round(2).reset_index()
         eng_tester_hours = df_eng.groupby('Tester')['Engineering Support Hours'].sum().round(2).reset_index().sort_values('Engineering Support Hours', ascending=False)
         eng_req_hours = df_eng.groupby('Customer Requestor')['Engineering Support Hours'].sum().round(2).reset_index().sort_values('Engineering Support Hours', ascending=False)
+
+        # 🌟 新增：團隊歸屬分析 (CSO vs Gchip)
+        df_eng['Team'] = df_eng['Customer Requestor'].apply(lambda x: 'CSO' if str(x).strip() == 'Alec' else 'Gchip')
+        team_eng_hours = df_eng.groupby('Team')['Engineering Support Hours'].sum().round(2).reset_index().sort_values('Engineering Support Hours', ascending=False)
 
         st.success("✅ 資料解析與均分完成！")
         st.divider()
 
         # ==========================================
-        # 繪圖排版與動態篩選函數 🌟 (核心更新區塊)
+        # 繪圖排版與動態篩選函數 (UI中文 / Chart英文)
         # ==========================================
         sns.set_theme(style="whitegrid")
 
@@ -90,27 +101,22 @@ if uploaded_file is not None:
             col_data, col_chart = st.columns([1, 2])
             
             with col_data:
-                # --- 新增：互動式篩選器 ---
+                # 互動式篩選器
                 if filter_col:
                     unique_items = sorted(df[filter_col].unique().tolist())
-                    # 在表格上方放置多選選單 (預設為全選)
                     selected_items = st.multiselect(
                         f"🔽 篩選 {filter_col} (點擊 'x' 以排除特定項目)", 
                         options=unique_items, 
                         default=unique_items,
-                        key=f"filter_{chart_title}" # 給予每個篩選器獨立的 ID
+                        key=f"filter_{chart_title}"
                     )
-                    # 根據使用者的選擇過濾 DataFrame
                     filtered_df = df[df[filter_col].isin(selected_items)]
                 else:
                     filtered_df = df
                 
-                # 顯示過濾後的資料表
                 st.dataframe(filtered_df, use_container_width=True)
                 
             with col_chart:
-                # --- 新增：防呆機制 ---
-                # 如果使用者把所有選項都取消了，顯示提示訊息而不畫圖
                 if filtered_df.empty:
                     st.warning("⚠️ 已排除所有項目，無資料可供繪圖。")
                 else:
@@ -121,6 +127,7 @@ if uploaded_file is not None:
                     else:
                         sns.barplot(data=filtered_df, x=x_col, y=y_col, ax=ax, palette=palette)
                     
+                    # 強制英文標題避免亂碼
                     ax.set_title(chart_title, fontweight='bold')
                     ax.set_xlabel(x_col)
                     ax.set_ylabel(y_col)
@@ -131,8 +138,10 @@ if uploaded_file is not None:
             st.divider()
 
         # ==========================================
-        # 繪製各區塊 (傳入指定的篩選欄位 filter_col)
+        # 繪製各區塊
         # ==========================================
+        
+        # --- 區塊 1：每月趨勢 ---
         st.subheader("📅 每月趨勢分析 / Monthly Trends")
         render_table_and_chart(
             ui_title="🟦 [Tester Hours] 每月機台總使用時數", 
@@ -145,6 +154,20 @@ if uploaded_file is not None:
             df=monthly_eng_hours, x_col='Month', y_col='Engineering Support Hours', hue_col='Name', filter_col='Name'
         )
 
+        # --- 區塊 2：團隊歸屬分析 (新加入的 2 張圖表) ---
+        st.subheader("🏢 團隊歸屬分析 / Team Analysis (CSO vs Gchip)")
+        render_table_and_chart(
+            ui_title="🟦 [Tester Hours] 依團隊統計機台時數", 
+            chart_title="[Tester Hours] Total Hours by Team",
+            df=team_tester_hours, x_col='Team', y_col='Tester Total Hours', filter_col='Team', palette='Set1'
+        )
+        render_table_and_chart(
+            ui_title="🟧 [Engineering Hours] 依團隊統計工程師時數", 
+            chart_title="[Engineering Hours] Total Hours by Team",
+            df=team_eng_hours, x_col='Team', y_col='Engineering Support Hours', filter_col='Team', palette='Dark2'
+        )
+
+        # --- 區塊 3：進階維度 (溫度/機台) ---
         st.subheader("🔍 進階維度分析 / Advanced Dimensions")
         render_table_and_chart(
             ui_title="🟦 [Tester Hours] 依溫度 (TEMP) 統計機台時數", 
@@ -157,6 +180,7 @@ if uploaded_file is not None:
             df=eng_tester_hours, x_col='Tester', y_col='Engineering Support Hours', filter_col='Tester', palette='magma'
         )
 
+        # --- 區塊 4：客戶需求者 ---
         st.subheader("👤 客戶需求者分析 / Customer Requestor Analysis")
         render_table_and_chart(
             ui_title="🟦 [Tester Hours] 依客戶需求者統計", 
