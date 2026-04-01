@@ -23,16 +23,50 @@ def split_and_distribute(df, target_col, hours_col):
     df = df.drop(columns=['__split_list', '__split_count'])
     return df
 
+# ==========================================
+# 🌟 聚合函數 (V21 升級版：支援時數結構展開)
+# ==========================================
 def aggregate_data(df, group_by_cols, hours_col):
     if isinstance(group_by_cols, str): group_by_cols = [group_by_cols]
-    if df.empty: return pd.DataFrame(columns=group_by_cols + [hours_col, 'Task Details'])
+    
+    breakdown_col = f"⏱️ {hours_col} (點擊展開)"
+    
+    if df.empty: 
+        return pd.DataFrame(columns=group_by_cols + [hours_col, breakdown_col, 'Task Details'])
+        
+    # 1. 取得基本加總時數 (保留原始數值供右側圖表使用)
     res_hours = df.groupby(group_by_cols)[hours_col].sum().reset_index()
+    
+    # 2. 🌟 新增：產生時數分配明細字串 (供左側表格展開閱讀)
+    def format_hours(g):
+        total = g[hours_col].sum()
+        
+        # 🛡️ 防呆：如果沒有 Team 欄位，就只顯示總計
+        if 'Team' not in g.columns:
+            return f"總計: {total:.2f} hrs"
+            
+        cso_hrs = g[g['Team'] == 'CSO'][hours_col].sum()
+        gchip_hrs = g[g['Team'] == 'Gchip'][hours_col].sum()
+        other_hrs = g[g['Team'] == 'Other / Unassigned'][hours_col].sum()
+        
+        # 組合漂亮的展開字串
+        details = [f"總計: {total:.2f} hrs"]
+        if cso_hrs > 0: details.append(f"  ├ CSO: {cso_hrs:.2f} hrs")
+        if gchip_hrs > 0: details.append(f"  ├ Gchip: {gchip_hrs:.2f} hrs")
+        if other_hrs > 0: details.append(f"  └ Other: {other_hrs:.2f} hrs")
+        
+        return '\n'.join(details)
+        
+    res_breakdown = df.groupby(group_by_cols).apply(format_hours).reset_index(name=breakdown_col)
+
+    # 3. 任務文字說明聚合
     def format_details(g):
         details_str = []
         if 'Team' not in g.columns:
             tasks = g['Task Details'].unique()
             valid_items = [str(i).strip() for i in tasks if pd.notna(i) and str(i).strip() != '']
             return '\n'.join([f"  • {item}" for item in valid_items]) if valid_items else "無詳細說明 (N/A)"
+        
         for team_name in ['CSO', 'Gchip', 'Other / Unassigned']:
             team_rows = g[g['Team'] == team_name]
             if team_rows.empty: continue
@@ -42,9 +76,14 @@ def aggregate_data(df, group_by_cols, hours_col):
                 team_str = f"🏢 【{team_name}】 任務明細：\n" + '\n'.join([f"  • {item}" for item in valid_items])
                 details_str.append(team_str)
         return '\n\n----------------------------------------\n\n'.join(details_str) if details_str else "無詳細說明 (N/A)"
+        
     res_details = df.groupby(group_by_cols).apply(format_details).reset_index(name='Task Details')
-    res = pd.merge(res_hours, res_details, on=group_by_cols)
+    
+    # 將三張表合併
+    res = pd.merge(res_hours, res_breakdown, on=group_by_cols)
+    res = pd.merge(res, res_details, on=group_by_cols)
     res[hours_col] = res[hours_col].round(2)
+    
     if 'Month' not in group_by_cols: res = res.sort_values(hours_col, ascending=False)
     return res
 
@@ -53,12 +92,8 @@ def aggregate_data(df, group_by_cols, hours_col):
 # ==========================================
 st.set_page_config(page_title="Hours Analysis Dashboard", layout="wide")
 
-# ==========================================
-# 🎨 移除容易失效的複雜 CSS，改用更輕量的樣式微調
-# ==========================================
 st.markdown("""
 <style>
-    /* 讓水平 Radio 按鈕的字體變大，作為頁籤的替代品 */
     div.row-widget.stRadio > div {
         flex-direction: row;
         gap: 20px;
@@ -69,7 +104,6 @@ st.markdown("""
         font-weight: 600 !important;
         cursor: pointer;
     }
-    /* 在不同主題下都能維持一致的表格背景色感 */
     .stDataFrame {
         background-color: transparent !important;
     }
@@ -81,7 +115,8 @@ st.title("📊 機台與工程師時數進階分析儀表板")
 
 with st.expander("🚀 版本更新紀錄 / Release Notes (點擊展開)"):
     st.markdown("""
-    * **v20 (最新版)**: 🌟 **無縫導覽與KPI升級**！移除了可能導致白底衝突的 CSS 頁籤，改用原生支援且視覺更穩定的「水平導覽列 (Radio Navigation)」。並在核心數據新增以月份天數動態計算的「最低標使用時數」指標。
+    * **v21 (最新版)**: 🌟 **時數結構展開功能**！在「每月趨勢」與「進階維度」等分析表格中，將總時數欄位升級為「點擊展開」格式，可直接檢視 CSO 與 Gchip 貢獻時數明細。
+    * **v20**: 🌟 無縫導覽與KPI升級！改用原生「水平導覽列 (Radio Navigation)」。並在核心數據新增以月份天數動態計算的「最低標使用時數」指標。
     * **v19**: 將超大頁籤底色更改為專業的淺灰藍色。
     * **v18**: 頁籤視覺強化與修復。
     * **v17**: UX 介面大改版！導入側邊欄 (Sidebar) 收納設定、主畫面頂部加入 KPI 數據看板。
@@ -176,47 +211,34 @@ if uploaded_file is not None:
         # ==========================================
         st.subheader("📌 核心數據總覽 (Executive Summary)")
         
-        # 1. 總機台使用時數
         total_tester_hrs = df_tester['Tester Total Hours'].sum()
         
-        # 2. 🎯 最低標使用時數計算邏輯
         unique_months = df_tester['Month'].dropna().unique()
         total_days = 0
         for m in unique_months:
             try:
-                # 動態取得該月份的總天數 (例如 2026-02 會自動算出 28天) 並累加
                 total_days += pd.Period(m).days_in_month
             except:
                 pass
         
-        # 防呆機制：若資料異常抓不到月份，則預設給 30 天
         if total_days == 0: total_days = 30
             
-        tester_count = 10      # 機台數量預設 10 台
-        target_utilization = 0.5 # 目標稼動率預設 50%
-        # 公式: 總天數 * 24小時 * 機台數量 * 目標稼動率
+        tester_count = 10
+        target_utilization = 0.5
         min_required_hours = total_days * 24 * tester_count * target_utilization
-        
-        # 計算實際時數與最低標的差距
         delta_val = total_tester_hrs - min_required_hours
         
-        # 3. 其他指標
         total_eng_hrs = df_eng['Engineering Support Hours'].sum()
         top_tester = df_tester.groupby('Tester #')['Tester Total Hours'].sum().idxmax() if not df_tester.empty else "N/A"
         
-        # 呈現 4 個指標
         kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-        
         kpi1.metric(label="🖥️ 總機台使用時數", value=f"{total_tester_hrs:,.1f} hrs")
-        
-        # 使用 delta 顯示差距：若總使用時數 > 最低標，會顯示綠色正值；若低於最低標，則顯示紅色負值！
         kpi2.metric(
             label=f"🎯 最低標使用時數 ({tester_count}台/50%)", 
             value=f"{min_required_hours:,.0f} hrs", 
             delta=f"{delta_val:,.1f} hrs", 
             delta_color="normal"
         )
-        
         kpi3.metric(label="🧑‍🔧 總工程支援時數", value=f"{total_eng_hrs:,.1f} hrs")
         kpi4.metric(label="🔥 最高用量機台", value=f"{top_tester}")
         
@@ -228,7 +250,7 @@ if uploaded_file is not None:
         plt.style.use('default')
         corporate_params = {
             "font.sans-serif": ["Microsoft JhengHei", "PingFang TC", "Arial Unicode MS", "SimHei", "sans-serif"],
-            "axes.unicode_minus": False, "figure.facecolor": "none", "axes.facecolor": "#F8F9FA",
+            "axes.unicode_minus": False, "figure.facecolor": "#FFFFFF", "axes.facecolor": "#F8F9FA",
             "grid.color": "#DEE2E6", "grid.linestyle": "-", "grid.alpha": 0.8,
             "text.color": "#212529", "axes.labelcolor": "#495057", "xtick.color": "#6C757D", "ytick.color": "#6C757D",
         }
@@ -243,9 +265,32 @@ if uploaded_file is not None:
                     unique_items = sorted(df[filter_col].unique().tolist())
                     selected_items = st.multiselect(f"🔽 篩選 {filter_col}", options=unique_items, default=unique_items, key=f"filter_{chart_title}")
                     filtered_df = df[df[filter_col].isin(selected_items)]
+                
+                # 動態取得新產生的時數明細欄位名稱
+                breakdown_col_name = f"⏱️ {y_col} (點擊展開)"
+                
                 st.dataframe(
-                    filtered_df, use_container_width=True, hide_index=True,  
-                    column_config={"Task Details": st.column_config.TextColumn("📋 任務說明 (點擊展開)", width="medium")}
+                    filtered_df, 
+                    use_container_width=True, 
+                    hide_index=True,  
+                    column_config={
+                        # 隱藏原本單純的數字欄位 (因為畫圖會用到，但不需要秀在表格上)
+                        y_col: None,
+                        
+                        # 顯示具有點擊展開功能的時數明細欄位
+                        breakdown_col_name: st.column_config.TextColumn(
+                            breakdown_col_name,
+                            help="點擊儲存格，即可查看該時數的 CSO / Gchip 貢獻拆分",
+                            width="medium"
+                        ),
+                        
+                        # 顯示任務說明展開欄位
+                        "Task Details": st.column_config.TextColumn(
+                            "📋 任務說明 (點擊展開)", 
+                            help="點擊儲存格，即可查看區分 CSO 與 Gchip 的完整工作內容",
+                            width="medium"
+                        )
+                    }
                 )
             with col_chart:
                 if filtered_df.empty: st.warning("無資料可顯示。")
@@ -266,11 +311,10 @@ if uploaded_file is not None:
             st.divider()
 
         # ==========================================
-        # 📑 穩定版導覽選單 (取代易失效的 CSS 頁籤)
+        # 📑 原生導覽選單
         # ==========================================
         st.markdown("### 🔍 切換分析視角")
         
-        # 使用原生水平 radio，不受主題背景影響
         selected_view = st.radio(
             label="選擇分析維度",
             options=[
