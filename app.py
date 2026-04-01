@@ -54,46 +54,24 @@ def aggregate_data(df, group_by_cols, hours_col):
 st.set_page_config(page_title="Hours Analysis Dashboard", layout="wide")
 
 # ==========================================
-# 🎨 注入自訂 CSS 來強化 Tabs (頁籤) 的視覺效果
+# 🎨 移除容易失效的複雜 CSS，改用更輕量的樣式微調
 # ==========================================
-# 更改為更專業的顏色：淺灰藍色 (#eef2f5) 取代白色 (#ffffff)
 st.markdown("""
 <style>
-    /* 讓整個 Tab 列表區塊有背景色和圓角 */
-    div[data-baseweb="tab-list"] {
-        gap: 8px;
-        background-color: #f1f3f5;
-        padding: 10px 10px 0 10px;
-        border-radius: 12px 12px 0 0;
-        border-bottom: 3px solid #dee2e6;
+    /* 讓水平 Radio 按鈕的字體變大，作為頁籤的替代品 */
+    div.row-widget.stRadio > div {
+        flex-direction: row;
+        gap: 20px;
+        padding: 10px 0;
     }
-    /* 強化每個獨立 Tab 的樣式 - 替換為專業的淺灰藍色 */
-    div[data-baseweb="tab"] {
-        height: 55px;
-        padding: 0 25px;
-        background-color: #eef2f5; 
-        border: 1px solid #dee2e6;
-        border-bottom: none;
-        border-radius: 10px 10px 0 0;
-        font-size: 18px !important;
-        font-weight: bold;
-        color: #495057;
-        transition: all 0.2s ease-in-out;
+    div.row-widget.stRadio label {
+        font-size: 1.1rem !important;
+        font-weight: 600 !important;
+        cursor: pointer;
     }
-    /* 游標移上去時的特效 */
-    div[data-baseweb="tab"]:hover {
-        background-color: #dbe4eb;
-        color: #000000;
-    }
-    /* 當 Tab 被選中時的高亮特效 (商務藍) */
-    div[data-baseweb="tab"][aria-selected="true"] {
-        background-color: #0056b3;
-        color: #ffffff !important;
-        border-color: #0056b3;
-    }
-    /* 隱藏 Streamlit 預設的細細底線 */
-    div[data-baseweb="tab-highlight"] {
-        display: none;
+    /* 在不同主題下都能維持一致的表格背景色感 */
+    .stDataFrame {
+        background-color: transparent !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -103,16 +81,17 @@ st.title("📊 機台與工程師時數進階分析儀表板")
 
 with st.expander("🚀 版本更新紀錄 / Release Notes (點擊展開)"):
     st.markdown("""
-    * **v19 (最新版)**: 🌟 **介面與數據優化**！將超大頁籤底色更改為專業的淺灰藍色；並在核心數據總覽新增「最低標使用時數」指標 (機台數預設 10 台，每月基本要求 50% 稼動率)。
-    * **v18**: 🌟 頁籤視覺強化與修復！透過自訂 CSS 大幅突顯 Tab 選擇區塊，增強點擊引導；並完整修復、保留 v1 至 v18 的完整版本更新紀錄。
-    * **v17**: 🌟 UX 介面大改版！導入側邊欄 (Sidebar) 收納設定、主畫面頂部加入 KPI 數據看板，並使用「頁籤 (Tabs)」分類圖表。
+    * **v20 (最新版)**: 🌟 **無縫導覽與KPI升級**！移除了可能導致白底衝突的 CSS 頁籤，改用原生支援且視覺更穩定的「水平導覽列 (Radio Navigation)」。並在核心數據新增以月份天數動態計算的「最低標使用時數」指標。
+    * **v19**: 將超大頁籤底色更改為專業的淺灰藍色。
+    * **v18**: 頁籤視覺強化與修復。
+    * **v17**: UX 介面大改版！導入側邊欄 (Sidebar) 收納設定、主畫面頂部加入 KPI 數據看板。
     * **v16**: 🛡️ 系統穩定度升級！修復 aggregate_data KeyError，強化空資料防呆機制。
-    * **v15**: 📝 任務明細自動使用分隔線將 CSO 與 Gchip 拆分顯示，權責更清晰。
+    * **v15**: 📝 任務明細自動使用分隔線將 CSO 與 Gchip 拆分顯示。
     * **v14**: 新增「📋 任務說明」展開查詢功能，可直接在表格內查看原始工作內容。
-    * **v13**: 視覺風格優化！轉換為乾淨、明亮且具備商務質感的專業風格 (Professional Corporate Theme)。
+    * **v13**: 視覺風格優化！轉換為專業風格 (Professional Corporate Theme)。
     * **v12**: 導入深色科技感主題 (Dark Tech Theme)。
     * **v11**: 新增版本紀錄摺疊面板，優化 UI 引導說明。
-    * **v10**: 加入「團隊成員自定義」功能，支援 CSO/Gchip 互斥選擇與預設人員自動偵測。
+    * **v10**: 加入「團隊成員自定義」功能，支援 CSO/Gchip 互斥選擇。
     * **v9**: 加入「動態篩選器 (Multiselect)」，圖表隨篩選結果即時連動。
     * **v8**: 解決中文亂碼問題，圖表內部文字統一純英文。
     * **v7**: 介面大改版，採用「左表格、右圖表」並排設計。
@@ -121,7 +100,7 @@ with st.expander("🚀 版本更新紀錄 / Release Notes (點擊展開)"):
     * **v4**: 加入檔案上傳功能 (File Uploader)。
     * **v3**: 轉換為 Streamlit Web App 互動式架構。
     * **v2**: 加入 Engineering Hours 分頁數據解析。
-    * **v1**: 初始版本，解析 Tester Hours 並產生基礎月度統計長條圖。
+    * **v1**: 初始版本，解析 Tester Hours 並產生基礎月度統計圖。
     """)
 
 # ==========================================
@@ -134,7 +113,7 @@ with st.sidebar:
     **💡 操作指南：**
     1. 於下方上傳 Excel 檔案。
     2. 定義 CSO 與 Gchip 團隊成員。
-    3. 在右側主畫面的**超大頁籤**切換不同分析視角。
+    3. 在右側主畫面選擇不同分析維度。
     """)
     
     uploaded_file = st.file_uploader("📂 上傳 Excel 紀錄表", type=["xlsx", "xls"])
@@ -200,25 +179,25 @@ if uploaded_file is not None:
         # 1. 總機台使用時數
         total_tester_hrs = df_tester['Tester Total Hours'].sum()
         
-        # 2. 最低標使用時數計算邏輯
+        # 2. 🎯 最低標使用時數計算邏輯
         unique_months = df_tester['Month'].dropna().unique()
         total_days = 0
         for m in unique_months:
             try:
-                # 取得該月份(例如 '2026-02')的總天數(28天)並累加
+                # 動態取得該月份的總天數 (例如 2026-02 會自動算出 28天) 並累加
                 total_days += pd.Period(m).days_in_month
             except:
                 pass
         
-        # 防呆機制：若抓不到月份天數，則預設給 30 天
+        # 防呆機制：若資料異常抓不到月份，則預設給 30 天
         if total_days == 0: total_days = 30
             
-        tester_count = 10      # 暫訂 10 台機台
-        target_utilization = 0.5 # 目標稼動率 50%
-        # 公式: 總天數 * 24小時 * 10台 * 50%
+        tester_count = 10      # 機台數量預設 10 台
+        target_utilization = 0.5 # 目標稼動率預設 50%
+        # 公式: 總天數 * 24小時 * 機台數量 * 目標稼動率
         min_required_hours = total_days * 24 * tester_count * target_utilization
         
-        # 計算與達標時數的差異
+        # 計算實際時數與最低標的差距
         delta_val = total_tester_hrs - min_required_hours
         
         # 3. 其他指標
@@ -230,7 +209,7 @@ if uploaded_file is not None:
         
         kpi1.metric(label="🖥️ 總機台使用時數", value=f"{total_tester_hrs:,.1f} hrs")
         
-        # 使用 delta 屬性，當總機台使用時數 >= 最低標時，右邊會顯示綠色的正值；反之顯示紅色的負值
+        # 使用 delta 顯示差距：若總使用時數 > 最低標，會顯示綠色正值；若低於最低標，則顯示紅色負值！
         kpi2.metric(
             label=f"🎯 最低標使用時數 ({tester_count}台/50%)", 
             value=f"{min_required_hours:,.0f} hrs", 
@@ -249,7 +228,7 @@ if uploaded_file is not None:
         plt.style.use('default')
         corporate_params = {
             "font.sans-serif": ["Microsoft JhengHei", "PingFang TC", "Arial Unicode MS", "SimHei", "sans-serif"],
-            "axes.unicode_minus": False, "figure.facecolor": "#FFFFFF", "axes.facecolor": "#F8F9FA",
+            "axes.unicode_minus": False, "figure.facecolor": "none", "axes.facecolor": "#F8F9FA",
             "grid.color": "#DEE2E6", "grid.linestyle": "-", "grid.alpha": 0.8,
             "text.color": "#212529", "axes.labelcolor": "#495057", "xtick.color": "#6C757D", "ytick.color": "#6C757D",
         }
@@ -284,49 +263,50 @@ if uploaded_file is not None:
                     ax.set_xlabel(x_col, labelpad=10); ax.set_ylabel(y_col, labelpad=10)
                     plt.xticks(rotation=45, ha='right'); plt.tight_layout()
                     st.pyplot(fig)
+            st.divider()
 
         # ==========================================
-        # 📑 強化版頁籤切換區塊 (Tabs)
+        # 📑 穩定版導覽選單 (取代易失效的 CSS 頁籤)
         # ==========================================
-        st.markdown("<br>", unsafe_allow_html=True) 
+        st.markdown("### 🔍 切換分析視角")
         
-        tab1, tab2, tab3, tab4 = st.tabs([
-            "🏢 團隊歸屬分析", 
-            "📅 每月趨勢分析", 
-            "🔍 進階維度分析", 
-            "👤 客戶需求者分析"
-        ])
+        # 使用原生水平 radio，不受主題背景影響
+        selected_view = st.radio(
+            label="選擇分析維度",
+            options=[
+                "🏢 團隊歸屬分析 (Team)", 
+                "📅 每月趨勢分析 (Monthly)", 
+                "🌡️ 進階維度分析 (TEMP/Tester)", 
+                "👤 客戶需求者分析 (Requestor)"
+            ],
+            horizontal=True,
+            label_visibility="collapsed" 
+        )
+        
+        st.markdown("<br>", unsafe_allow_html=True)
 
-        with tab1:
-            st.markdown("<br>", unsafe_allow_html=True)
+        if selected_view == "🏢 團隊歸屬分析 (Team)":
             team_tester_hours = aggregate_data(df_tester, 'Team', 'Tester Total Hours')
             team_eng_hours = aggregate_data(df_eng, 'Team', 'Engineering Support Hours')
             render_table_and_chart("🟦 [Tester Hours] 依團隊統計", "[Tester Hours] Total by Team", team_tester_hours, 'Team', 'Tester Total Hours', filter_col='Team', custom_palette=['#2B5B84', '#E67E22', '#95A5A6'])
-            st.divider()
             render_table_and_chart("🟧 [Engineering Hours] 依團隊統計", "[Engineering Hours] Total by Team", team_eng_hours, 'Team', 'Engineering Support Hours', filter_col='Team', custom_palette=['#2980B9', '#D35400', '#7F8C8D'])
 
-        with tab2:
-            st.markdown("<br>", unsafe_allow_html=True)
+        elif selected_view == "📅 每月趨勢分析 (Monthly)":
             monthly_tester_hours = aggregate_data(df_tester, ['Month', 'Tester #'], 'Tester Total Hours')
             monthly_eng_hours = aggregate_data(df_eng, ['Month', 'Name'], 'Engineering Support Hours')
             render_table_and_chart("🟦 [Tester Hours] 每月機台時數", "[Tester Hours] Monthly by Tester", monthly_tester_hours, 'Month', 'Tester Total Hours', hue_col='Tester #', filter_col='Tester #', custom_palette='deep')
-            st.divider()
             render_table_and_chart("🟧 [Engineering Hours] 每月工程師時數", "[Engineering Hours] Monthly by Engineer", monthly_eng_hours, 'Month', 'Engineering Support Hours', hue_col='Name', filter_col='Name', custom_palette='muted')
 
-        with tab3:
-            st.markdown("<br>", unsafe_allow_html=True)
+        elif selected_view == "🌡️ 進階維度分析 (TEMP/Tester)":
             temp_hours = aggregate_data(df_tester, 'TEMP', 'Tester Total Hours')
             eng_tester_hours = aggregate_data(df_eng, 'Tester', 'Engineering Support Hours')
             render_table_and_chart("🟦 [Tester Hours] 依溫度 (TEMP) 統計", "[Tester Hours] Total by TEMP", temp_hours, 'TEMP', 'Tester Total Hours', filter_col='TEMP', custom_palette='Blues_r')
-            st.divider()
             render_table_and_chart("🟧 [Engineering Hours] 依機台 (Tester) 統計", "[Engineering Hours] Total by Tester", eng_tester_hours, 'Tester', 'Engineering Support Hours', filter_col='Tester', custom_palette='Oranges_r')
 
-        with tab4:
-            st.markdown("<br>", unsafe_allow_html=True)
+        elif selected_view == "👤 客戶需求者分析 (Requestor)":
             tester_req_hours = aggregate_data(df_tester, 'Customer Requestor', 'Tester Total Hours')
             eng_req_hours = aggregate_data(df_eng, 'Customer Requestor', 'Engineering Support Hours')
             render_table_and_chart("🟦 [Tester Hours] 依客戶統計", "[Tester Hours] Total by Requestor", tester_req_hours, 'Customer Requestor', 'Tester Total Hours', filter_col='Customer Requestor', custom_palette='Set2')
-            st.divider()
             render_table_and_chart("🟧 [Engineering Hours] 依客戶統計", "[Engineering Hours] Total by Requestor", eng_req_hours, 'Customer Requestor', 'Engineering Support Hours', filter_col='Customer Requestor', custom_palette='Set1')
 
     except Exception as e:
