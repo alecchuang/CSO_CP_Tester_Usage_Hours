@@ -26,6 +26,35 @@ def split_and_distribute(df, target_col, hours_col):
     return df
 
 # ==========================================
+# 定義：資料與任務說明聚合函數 (New Feature!)
+# ==========================================
+def aggregate_data(df, group_by_cols, hours_col):
+    """將時數進行加總，並將對應的 Description 文字合併去重"""
+    if isinstance(group_by_cols, str):
+        group_by_cols = [group_by_cols]
+        
+    def join_unique_details(x):
+        # 過濾空值並去除前後空白，避免重複
+        valid_items = [str(i).strip() for i in x.unique() if pd.notna(i) and str(i).strip() != '']
+        if not valid_items:
+            return "無詳細說明 (N/A)"
+        return '\n'.join([f"• {item}" for item in valid_items])
+        
+    agg_dict = {
+        hours_col: 'sum',
+        'Task Details': join_unique_details  # 聚合任務說明
+    }
+    
+    res = df.groupby(group_by_cols).agg(agg_dict).reset_index()
+    res[hours_col] = res[hours_col].round(2)
+    
+    # 若不是以月份排序，則以時數高低排序
+    if 'Month' not in group_by_cols:
+        res = res.sort_values(hours_col, ascending=False)
+        
+    return res
+
+# ==========================================
 # 網頁主程式開始
 # ==========================================
 st.set_page_config(page_title="Hours Analysis Dashboard", layout="wide")
@@ -35,7 +64,8 @@ st.title("📊 機台與工程師時數進階分析儀表板")
 # --- 版本說明 (Release Notes) ---
 with st.expander("🚀 版本更新紀錄 / Release Notes (點擊展開)"):
     st.markdown("""
-    * **v13 (最新版)**: 🏢 **視覺風格優化**！移除高對比科技風，轉換為乾淨、明亮且具備商務質感的專業風格 (Professional Corporate Theme)，並修復版本紀錄顯示不全的問題。
+    * **v14 (最新版)**: 📝 **新增「任務明細查詢」功能**！在所有數據表格的右側加入「📋 任務說明」欄位，點擊即可展開查看該列數據對應的所有原始工作內容 (Lot / Purpose / Description)。
+    * **v13**: 🏢 視覺風格優化！移除高對比科技風，轉換為乾淨、明亮且具備商務質感的專業風格 (Professional Corporate Theme)。
     * **v12**: 導入深色科技感主題 (Dark Tech Theme)，加入高對比螢光配色與極簡網格。
     * **v11**: 新增版本紀錄摺疊面板，優化 UI 引導說明。
     * **v10**: 加入「團隊成員自定義」功能，支援 CSO/Gchip 互斥選擇與預設人員自動偵測。
@@ -54,7 +84,8 @@ st.info("""
 **💡 操作指南 (Quick Guide)：**
 1. **上傳檔案**：點擊下方按鈕上傳 Excel 檔案。
 2. **定義團隊**：在下方「團隊成員定義」區塊，將人員分配至 **CSO** 或 **Gchip**。
-3. **篩選數據**：在表格上方點擊 **「x」** 排除不需要的項目，右側圖表會同步更新。
+3. **查看工作內容**：點擊表格內 **「📋 任務說明」** 的儲存格，即可展開閱讀完整的工作細節。
+4. **篩選數據**：在表格上方點擊 **「x」** 排除不需要的項目，右側圖表會同步更新。
 """)
 
 uploaded_file = st.file_uploader("請上傳您的 Excel 時數紀錄表", type=["xlsx", "xls"])
@@ -65,14 +96,19 @@ if uploaded_file is not None:
         df_eng_raw = pd.read_excel(uploaded_file, sheet_name="Engineering Hours")
 
         # --- 資料預處理 ---
-        df_tester = df_tester_raw[['Date', 'Tester #', 'Tester Total Hours', 'TEMP', 'Customer Requestor']].copy()
+        # 確保擷取 'Lot #wafer / Purpose /Description' 欄位
+        target_detail_col = 'Lot #wafer / Purpose /Description'
+        
+        df_tester = df_tester_raw[['Date', 'Tester #', 'Tester Total Hours', 'TEMP', 'Customer Requestor', target_detail_col]].copy()
+        df_tester.rename(columns={target_detail_col: 'Task Details'}, inplace=True)
         df_tester.dropna(subset=['Date', 'Tester #', 'Tester Total Hours'], how='all', inplace=True)
         df_tester['Date'] = pd.to_datetime(df_tester['Date'], errors='coerce')
         df_tester.dropna(subset=['Date'], inplace=True)
         df_tester['Month'] = df_tester['Date'].dt.to_period('M').astype(str)
         df_tester['Tester Total Hours'] = pd.to_numeric(df_tester['Tester Total Hours'], errors='coerce').fillna(0)
 
-        df_eng = df_eng_raw[['Date', 'Name', 'Engineering Support Hours', 'Tester', 'Customer Requestor']].copy()
+        df_eng = df_eng_raw[['Date', 'Name', 'Engineering Support Hours', 'Tester', 'Customer Requestor', target_detail_col]].copy()
+        df_eng.rename(columns={target_detail_col: 'Task Details'}, inplace=True)
         df_eng.dropna(subset=['Date', 'Name', 'Engineering Support Hours'], how='all', inplace=True)
         df_eng['Date'] = pd.to_datetime(df_eng['Date'], errors='coerce')
         df_eng.dropna(subset=['Date'], inplace=True)
@@ -117,19 +153,17 @@ if uploaded_file is not None:
         # ==========================================
         # 🏢 專業商務圖表主題設定 (Professional Corporate Theme)
         # ==========================================
-        # 恢復使用預設的亮色背景
         plt.style.use('default')
-        
         corporate_params = {
             "font.sans-serif": ["Microsoft JhengHei", "PingFang TC", "Arial Unicode MS", "SimHei", "sans-serif"],
             "axes.unicode_minus": False,
-            "figure.facecolor": "#FFFFFF",      # 純白圖表背景
-            "axes.facecolor": "#F8F9FA",        # 淺灰圖表內部底色，增加數據閱讀的層次感
-            "grid.color": "#DEE2E6",            # 柔和的網格線
-            "grid.linestyle": "-",              # 實線網格顯得更穩重
+            "figure.facecolor": "#FFFFFF",
+            "axes.facecolor": "#F8F9FA",
+            "grid.color": "#DEE2E6",
+            "grid.linestyle": "-",
             "grid.alpha": 0.8,
-            "text.color": "#212529",            # 深灰文字 (非純黑，減少視覺疲勞)
-            "axes.labelcolor": "#495057",       # X/Y 軸標籤顏色
+            "text.color": "#212529",
+            "axes.labelcolor": "#495057",
             "xtick.color": "#6C757D",
             "ytick.color": "#6C757D",
         }
@@ -147,7 +181,20 @@ if uploaded_file is not None:
                     filtered_df = df[df[filter_col].isin(selected_items)]
                 else:
                     filtered_df = df
-                st.dataframe(filtered_df, use_container_width=True)
+                
+                # --- ✨ 表格設定優化：加入互動式 Task Details 欄位 ---
+                st.dataframe(
+                    filtered_df, 
+                    use_container_width=True,
+                    hide_index=True,  # 隱藏醜醜的數字編號
+                    column_config={
+                        "Task Details": st.column_config.TextColumn(
+                            "📋 任務說明 (點擊展開)",
+                            help="點擊此欄位的儲存格，即可查看該項目的完整工作內容",
+                            width="medium" # 設定較寬的欄位
+                        )
+                    }
+                )
             
             with col_chart:
                 if filtered_df.empty:
@@ -155,17 +202,14 @@ if uploaded_file is not None:
                 else:
                     fig, ax = plt.subplots(figsize=(10, 4.5))
                     
-                    # 繪製長條圖，加入細微的白色邊框區分數據柱
                     if hue_col:
                         sns.barplot(data=filtered_df, x=x_col, y=y_col, hue=hue_col, ax=ax, palette=custom_palette, edgecolor="#FFFFFF", linewidth=1.2)
-                        # 圖例文字顏色設定
                         legend = ax.legend(title=hue_col, bbox_to_anchor=(1.05, 1), loc='upper left', frameon=False)
                         plt.setp(legend.get_texts(), color='#495057')
                         plt.setp(legend.get_title(), color='#212529', fontweight='bold')
                     else:
                         sns.barplot(data=filtered_df, x=x_col, y=y_col, ax=ax, palette=custom_palette, edgecolor="#FFFFFF", linewidth=1.2)
                     
-                    # 簡化外框線，僅保留底部與左側
                     ax.spines['top'].set_visible(False)
                     ax.spines['right'].set_visible(False)
                     ax.spines['left'].set_color('#CED4DA')
@@ -180,34 +224,30 @@ if uploaded_file is not None:
             st.divider()
 
         # ==========================================
-        # 繪製圖表 (套用專業商務色彩)
+        # 繪製圖表 (改用強化的聚合函數 aggregate_data)
         # ==========================================
         
         st.subheader("🏢 團隊歸屬分析 / Team Analysis")
-        team_tester_hours = df_tester.groupby('Team')['Tester Total Hours'].sum().round(2).reset_index().sort_values('Tester Total Hours', ascending=False)
-        team_eng_hours = df_eng.groupby('Team')['Engineering Support Hours'].sum().round(2).reset_index().sort_values('Engineering Support Hours', ascending=False)
-        # 使用穩重的深藍與沉穩橘
+        team_tester_hours = aggregate_data(df_tester, 'Team', 'Tester Total Hours')
+        team_eng_hours = aggregate_data(df_eng, 'Team', 'Engineering Support Hours')
         render_table_and_chart("🟦 [Tester Hours] 依團隊統計", "[Tester Hours] Total by Team", team_tester_hours, 'Team', 'Tester Total Hours', filter_col='Team', custom_palette=['#2B5B84', '#E67E22', '#95A5A6'])
         render_table_and_chart("🟧 [Engineering Hours] 依團隊統計", "[Engineering Hours] Total by Team", team_eng_hours, 'Team', 'Engineering Support Hours', filter_col='Team', custom_palette=['#2980B9', '#D35400', '#7F8C8D'])
 
         st.subheader("📅 每月趨勢分析 / Monthly Trends")
-        monthly_tester_hours = df_tester.groupby(['Month', 'Tester #'])['Tester Total Hours'].sum().round(2).reset_index()
-        monthly_eng_hours = df_eng.groupby(['Month', 'Name'])['Engineering Support Hours'].sum().round(2).reset_index()
-        # 採用 Seaborn 內建的柔和與經典商務色系
+        monthly_tester_hours = aggregate_data(df_tester, ['Month', 'Tester #'], 'Tester Total Hours')
+        monthly_eng_hours = aggregate_data(df_eng, ['Month', 'Name'], 'Engineering Support Hours')
         render_table_and_chart("🟦 [Tester Hours] 每月機台時數", "[Tester Hours] Monthly by Tester", monthly_tester_hours, 'Month', 'Tester Total Hours', hue_col='Tester #', filter_col='Tester #', custom_palette='deep')
         render_table_and_chart("🟧 [Engineering Hours] 每月工程師時數", "[Engineering Hours] Monthly by Engineer", monthly_eng_hours, 'Month', 'Engineering Support Hours', hue_col='Name', filter_col='Name', custom_palette='muted')
 
         st.subheader("🔍 進階維度分析 / Advanced Dimensions")
-        temp_hours = df_tester.groupby('TEMP')['Tester Total Hours'].sum().round(2).reset_index().sort_values('Tester Total Hours', ascending=False)
-        eng_tester_hours = df_eng.groupby('Tester')['Engineering Support Hours'].sum().round(2).reset_index().sort_values('Engineering Support Hours', ascending=False)
-        # 採用漸層的藍綠色系與暖色系，適合呈現漸進的數值(如溫度、機台產能)
+        temp_hours = aggregate_data(df_tester, 'TEMP', 'Tester Total Hours')
+        eng_tester_hours = aggregate_data(df_eng, 'Tester', 'Engineering Support Hours')
         render_table_and_chart("🟦 [Tester Hours] 依溫度 (TEMP) 統計", "[Tester Hours] Total by TEMP", temp_hours, 'TEMP', 'Tester Total Hours', filter_col='TEMP', custom_palette='Blues_r')
         render_table_and_chart("🟧 [Engineering Hours] 依機台 (Tester) 統計", "[Engineering Hours] Total by Tester", eng_tester_hours, 'Tester', 'Engineering Support Hours', filter_col='Tester', custom_palette='Oranges_r')
 
         st.subheader("👤 客戶需求者分析 / Requestor Analysis")
-        tester_req_hours = df_tester.groupby('Customer Requestor')['Tester Total Hours'].sum().round(2).reset_index().sort_values('Tester Total Hours', ascending=False)
-        eng_req_hours = df_eng.groupby('Customer Requestor')['Engineering Support Hours'].sum().round(2).reset_index().sort_values('Engineering Support Hours', ascending=False)
-        # 使用多色但飽和度較低的商務色系
+        tester_req_hours = aggregate_data(df_tester, 'Customer Requestor', 'Tester Total Hours')
+        eng_req_hours = aggregate_data(df_eng, 'Customer Requestor', 'Engineering Support Hours')
         render_table_and_chart("🟦 [Tester Hours] 依客戶統計", "[Tester Hours] Total by Requestor", tester_req_hours, 'Customer Requestor', 'Tester Total Hours', filter_col='Customer Requestor', custom_palette='Set2')
         render_table_and_chart("🟧 [Engineering Hours] 依客戶統計", "[Engineering Hours] Total by Requestor", eng_req_hours, 'Customer Requestor', 'Engineering Support Hours', filter_col='Customer Requestor', custom_palette='Set1')
 
