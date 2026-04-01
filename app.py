@@ -1,80 +1,74 @@
-
+import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-def analyze_hours(excel_file_path):
-    # ---------------------------
-    # 1. 讀取 Excel 檔案中的分頁
-    # ---------------------------
-    try:
-        # 讀取 Tester Hours (跳過前 3 列的非表頭資訊)
-        df_tester = pd.read_excel(excel_file_path, sheet_name="Tester Hours", skiprows=3)
-        # 讀取 Engineering Hours (這頁的表頭通常在第一列，所以不用 skiprows，視實際情況調整)
-        df_eng = pd.read_excel(excel_file_path, sheet_name="Engineering Hours") 
-    except Exception as e:
-        print(f"讀取 Excel 發生錯誤: {e}")
-        return
+# 設定網頁標題與寬度
+st.set_page_config(page_title="Hours Analysis", layout="wide")
 
-    # ---------------------------
-    # 2. 處理 Tester Hours 資料
-    # ---------------------------
+st.title("📊 機台與工程師時數分析")
+
+# 填入您的 Excel 檔案路徑 (請確保檔案與 app.py 放在同一個資料夾)
+file_path = "Google Monthly Engineering ATT_Service_Hours_Wafer Sort_ 2026__Eng_hours_revD.xlsx"
+
+try:
+    # --- 1. 讀取資料 ---
+    st.info("正在讀取資料，請稍候...")
+    df_tester = pd.read_excel(file_path, sheet_name="Tester Hours", skiprows=3)
+    df_eng = pd.read_excel(file_path, sheet_name="Engineering Hours")
+
+    # --- 2. 處理 Tester Hours 資料 ---
     df_tester = df_tester[['Date', 'Tester #', 'Tester Total Hours']].copy()
     df_tester.dropna(subset=['Date', 'Tester #', 'Tester Total Hours'], how='all', inplace=True)
     df_tester['Date'] = pd.to_datetime(df_tester['Date'], errors='coerce')
     df_tester.dropna(subset=['Date'], inplace=True)
-    
-    # 提取月份
     df_tester['Month'] = df_tester['Date'].dt.to_period('M').astype(str)
     df_tester['Tester Total Hours'] = pd.to_numeric(df_tester['Tester Total Hours'], errors='coerce').fillna(0)
-
-    # 分組加總 (依月份與機台)
     monthly_tester_hours = df_tester.groupby(['Month', 'Tester #'])['Tester Total Hours'].sum().reset_index()
 
-    # ---------------------------
-    # 3. 處理 Engineering Hours 資料
-    # ---------------------------
-    # 篩選出 Date, Name, Engineering Support Hours 欄位
+    # --- 3. 處理 Engineering Hours 資料 ---
     df_eng = df_eng[['Date', 'Name', 'Engineering Support Hours']].copy()
     df_eng.dropna(subset=['Date', 'Name', 'Engineering Support Hours'], how='all', inplace=True)
     df_eng['Date'] = pd.to_datetime(df_eng['Date'], errors='coerce')
     df_eng.dropna(subset=['Date'], inplace=True)
-    
-    # 提取月份
     df_eng['Month'] = df_eng['Date'].dt.to_period('M').astype(str)
-    # 確保時數為數值格式
     df_eng['Engineering Support Hours'] = pd.to_numeric(df_eng['Engineering Support Hours'], errors='coerce').fillna(0)
-
-    # 分組加總 (依月份與工程師名字)
     monthly_eng_hours = df_eng.groupby(['Month', 'Name'])['Engineering Support Hours'].sum().reset_index()
 
-    # ---------------------------
-    # 4. 繪製圖表 (顯示兩張圖)
-    # ---------------------------
+    st.success("資料讀取完成！")
+    st.divider() # 畫一條分隔線
+
+    # --- 4. 繪製圖表 ---
     sns.set_theme(style="whitegrid")
 
-    # --- 圖表 1: Tester Hours ---
-    plt.figure(figsize=(12, 6))
-    sns.barplot(data=monthly_tester_hours, x='Month', y='Tester Total Hours', hue='Tester #')
-    plt.title('Total Tester Hours per Month by Tester', fontsize=16)
-    plt.xlabel('Month', fontsize=12)
-    plt.ylabel('Total Hours', fontsize=12)
-    plt.legend(title='Tester #', bbox_to_anchor=(1.05, 1), loc='upper left')
+    # 圖表 1: Tester Hours
+    st.subheader("🖥️ 每月機台總使用時數 (Tester Hours)")
+    # 在 Streamlit 中，我們必須先建立畫布 (fig, ax)
+    fig1, ax1 = plt.subplots(figsize=(12, 6))
+    sns.barplot(data=monthly_tester_hours, x='Month', y='Tester Total Hours', hue='Tester #', ax=ax1)
+    ax1.set_title('Total Tester Hours per Month by Tester', fontsize=14)
+    ax1.set_xlabel('Month')
+    ax1.set_ylabel('Total Hours')
+    ax1.legend(title='Tester #', bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.tight_layout()
-    plt.show() # 顯示第一張圖
+    # 使用 st.pyplot 將畫布顯示在網頁上
+    st.pyplot(fig1) 
 
-    # --- 圖表 2: Engineering Hours ---
-    plt.figure(figsize=(12, 6))
-    sns.barplot(data=monthly_eng_hours, x='Month', y='Engineering Support Hours', hue='Name')
-    plt.title('Total Engineering Hours per Month by Engineer', fontsize=16)
-    plt.xlabel('Month', fontsize=12)
-    plt.ylabel('Total Hours', fontsize=12)
-    # 若名字太多，可以微調 legend 位置或大小
-    plt.legend(title='Engineer Name', bbox_to_anchor=(1.05, 1), loc='upper left', ncol=2)
+    st.divider()
+
+    # 圖表 2: Engineering Hours
+    st.subheader("🧑‍🔧 每月工程師支援時數 (Engineering Hours)")
+    fig2, ax2 = plt.subplots(figsize=(12, 6))
+    sns.barplot(data=monthly_eng_hours, x='Month', y='Engineering Support Hours', hue='Name', ax=ax2)
+    ax2.set_title('Total Engineering Hours per Month by Engineer', fontsize=14)
+    ax2.set_xlabel('Month')
+    ax2.set_ylabel('Total Hours')
+    ax2.legend(title='Engineer Name', bbox_to_anchor=(1.05, 1), loc='upper left', ncol=2)
     plt.tight_layout()
-    plt.show() # 顯示第二張圖
+    # 同樣使用 st.pyplot 顯示第二張圖
+    st.pyplot(fig2)
 
-# 執行範例: 將檔案名稱替換為您實際的 Excel 檔案路徑
-if __name__ == "__main__":
-    file_path = "Google Monthly Engineering ATT_Service_Hours_Wafer Sort_ 2026__Eng_hours_revD.xlsx"
-    analyze_hours(file_path)
+except FileNotFoundError:
+    st.error(f"找不到檔案：`{file_path}`。請確認檔案已上傳且名稱完全相符！")
+except Exception as e:
+    st.error(f"執行時發生未預期的錯誤: {e}")
