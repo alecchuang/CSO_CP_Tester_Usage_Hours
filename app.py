@@ -4,13 +4,6 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import re
 
-import matplotlib as mpl 
-
-# === 新增這段來修復中文亂碼 ===
-mpl.rcParams['font.sans-serif'] = ['Microsoft JhengHei', 'PingFang TC', 'Arial Unicode MS', 'SimHei']
-mpl.rcParams['axes.unicode_minus'] = False 
-# ============================
-
 # ==========================================
 # 定義：時數分割與均分函數
 # ==========================================
@@ -62,7 +55,7 @@ if uploaded_file is not None:
         for col in ['Tester #', 'TEMP', 'Customer Requestor']:
             df_tester = split_and_distribute(df_tester, target_col=col, hours_col='Tester Total Hours')
 
-        # [匯總資料] 確保數字為小數點後兩位，方便表格顯示
+        # [匯總資料] 確保數字為小數點後兩位
         monthly_tester_hours = df_tester.groupby(['Month', 'Tester #'])['Tester Total Hours'].sum().round(2).reset_index()
         temp_hours = df_tester.groupby('TEMP')['Tester Total Hours'].sum().round(2).reset_index().sort_values('Tester Total Hours', ascending=False)
         tester_req_hours = df_tester.groupby('Customer Requestor')['Tester Total Hours'].sum().round(2).reset_index().sort_values('Tester Total Hours', ascending=False)
@@ -89,22 +82,25 @@ if uploaded_file is not None:
         st.divider()
 
         # ==========================================
-        # 自動化 UI 排版函數 (左數據、右圖表)
+        # 🌟 解決 Seaborn/Matplotlib 中文亂碼的核心設定 🌟
         # ==========================================
-        sns.set_theme(style="whitegrid")
+        # 將字型設定直接包裝進 seaborn 的 theme 裡面，防止被覆蓋
+        custom_params = {
+            "font.sans-serif": ["Microsoft JhengHei", "PingFang TC", "Arial Unicode MS", "SimHei", "WenQuanYi Micro Hei", "sans-serif"],
+            "axes.unicode_minus": False
+        }
+        sns.set_theme(style="whitegrid", rc=custom_params)
 
         def render_table_and_chart(title, df, x_col, y_col, hue_col=None, palette=None):
             st.markdown(f"#### {title}")
             
-            # 將畫面分割為左右兩欄：左邊占 1 份寬度，右邊占 2 份寬度
+            # 將畫面分割為左右兩欄
             col_data, col_chart = st.columns([1, 2])
             
             with col_data:
-                # 左側：顯示資料表 (表格)
                 st.dataframe(df, use_container_width=True)
                 
             with col_chart:
-                # 右側：顯示長條圖
                 fig, ax = plt.subplots(figsize=(10, 4.5))
                 if hue_col:
                     sns.barplot(data=df, x=x_col, y=y_col, hue=hue_col, ax=ax, palette=palette)
@@ -119,7 +115,7 @@ if uploaded_file is not None:
                 plt.tight_layout()
                 st.pyplot(fig)
                 
-            st.divider() # 每個區塊結束後畫一條分隔線
+            st.divider()
 
         # ==========================================
         # 繪製各區塊
