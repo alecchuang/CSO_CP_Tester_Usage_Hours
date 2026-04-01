@@ -26,26 +26,45 @@ def split_and_distribute(df, target_col, hours_col):
     return df
 
 # ==========================================
-# 定義：資料與任務說明聚合函數 (New Feature!)
+# 定義：資料與任務說明聚合函數 (V15 升級版: 依團隊分隔)
 # ==========================================
 def aggregate_data(df, group_by_cols, hours_col):
-    """將時數進行加總，並將對應的 Description 文字合併去重"""
+    """將時數進行加總，並將對應的 Description 依據團隊 (CSO/Gchip) 分隔合併"""
     if isinstance(group_by_cols, str):
         group_by_cols = [group_by_cols]
         
-    def join_unique_details(x):
-        # 過濾空值並去除前後空白，避免重複
-        valid_items = [str(i).strip() for i in x.unique() if pd.notna(i) and str(i).strip() != '']
-        if not valid_items:
-            return "無詳細說明 (N/A)"
-        return '\n'.join([f"• {item}" for item in valid_items])
-        
-    agg_dict = {
-        hours_col: 'sum',
-        'Task Details': join_unique_details  # 聚合任務說明
-    }
+    # 1. 計算總時數
+    res_hours = df.groupby(group_by_cols)[hours_col].sum().reset_index()
     
-    res = df.groupby(group_by_cols).agg(agg_dict).reset_index()
+    # 2. 合併與排版文字敘述 (依團隊分隔)
+    def format_details(g):
+        details_str = []
+        # 依序處理三個團隊類別，確保顯示順序一致
+        for team_name in ['CSO', 'Gchip', 'Other / Unassigned']:
+            team_rows = g[g['Team'] == team_name]
+            if team_rows.empty:
+                continue
+                
+            # 取出該團隊不重複的任務說明
+            tasks = team_rows['Task Details'].unique()
+            valid_items = [str(i).strip() for i in tasks if pd.notna(i) and str(i).strip() != '']
+            
+            if valid_items:
+                # 組合該團隊的文字區塊
+                team_str = f"🏢 【{team_name}】 任務明細：\n" + '\n'.join([f"  • {item}" for item in valid_items])
+                details_str.append(team_str)
+        
+        if not details_str:
+            return "無詳細說明 (N/A)"
+            
+        # 團隊與團隊之間，使用分隔線隔開
+        return '\n\n----------------------------------------\n\n'.join(details_str)
+        
+    # 套用自定義的格式化函數
+    res_details = df.groupby(group_by_cols).apply(lambda g: pd.Series({'Task Details': format_details(g)})).reset_index()
+    
+    # 3. 將時數與文字合併
+    res = pd.merge(res_hours, res_details, on=group_by_cols)
     res[hours_col] = res[hours_col].round(2)
     
     # 若不是以月份排序，則以時數高低排序
@@ -64,13 +83,14 @@ st.title("📊 機台與工程師時數進階分析儀表板")
 # --- 版本說明 (Release Notes) ---
 with st.expander("🚀 版本更新紀錄 / Release Notes (點擊展開)"):
     st.markdown("""
-    * **v14 (最新版)**: 📝 **新增「任務明細查詢」功能**！在所有數據表格的右側加入「📋 任務說明」欄位，點擊即可展開查看該列數據對應的所有原始工作內容 (Lot / Purpose / Description)。
+    * **v15 (最新版)**: 📝 **任務明細自動分類**！在「📋 任務說明」展開視窗中，自動使用分隔線將 CSO 與 Gchip 的工作內容獨立拆分顯示，權責更清晰。
+    * **v14**: 新增「任務明細查詢」功能！在數據表格右側加入「📋 任務說明」欄位，點擊即可展開查看所有原始工作內容 (Lot / Purpose / Description)。
     * **v13**: 🏢 視覺風格優化！移除高對比科技風，轉換為乾淨、明亮且具備商務質感的專業風格 (Professional Corporate Theme)。
     * **v12**: 導入深色科技感主題 (Dark Tech Theme)，加入高對比螢光配色與極簡網格。
     * **v11**: 新增版本紀錄摺疊面板，優化 UI 引導說明。
     * **v10**: 加入「團隊成員自定義」功能，支援 CSO/Gchip 互斥選擇與預設人員自動偵測。
     * **v9**: 在每個數據表格上方加入「動態篩選器 (Multiselect)」，圖表隨篩選結果即時連動。
-    * **v8**: 解決中文亂碼問題，將圖表內部文字（標題、軸線）統一轉換為純英文顯示。
+    * **v8**: 解決中文亂碼問題，將圖表內部文字統一轉換為純英文顯示。
     * **v7**: 介面大改版，採用「左表格、右圖表」的並排設計，提升數據核對效率。
     * **v6**: 核心演算法更新，導入「多單位分割與時數均分邏輯 (處理 / , ; \\n 等符號)」。
     * **v5**: 擴充分析維度，加入 TEMP、Customer Requestor、Tester 等進階統計。
@@ -84,7 +104,7 @@ st.info("""
 **💡 操作指南 (Quick Guide)：**
 1. **上傳檔案**：點擊下方按鈕上傳 Excel 檔案。
 2. **定義團隊**：在下方「團隊成員定義」區塊，將人員分配至 **CSO** 或 **Gchip**。
-3. **查看工作內容**：點擊表格內 **「📋 任務說明」** 的儲存格，即可展開閱讀完整的工作細節。
+3. **查看工作內容**：點擊表格內 **「📋 任務說明」** 的儲存格，即可展開閱讀完整的工作細節 (將自動區分 CSO 與 Gchip)。
 4. **篩選數據**：在表格上方點擊 **「x」** 排除不需要的項目，右側圖表會同步更新。
 """)
 
@@ -96,7 +116,6 @@ if uploaded_file is not None:
         df_eng_raw = pd.read_excel(uploaded_file, sheet_name="Engineering Hours")
 
         # --- 資料預處理 ---
-        # 確保擷取 'Lot #wafer / Purpose /Description' 欄位
         target_detail_col = 'Lot #wafer / Purpose /Description'
         
         df_tester = df_tester_raw[['Date', 'Tester #', 'Tester Total Hours', 'TEMP', 'Customer Requestor', target_detail_col]].copy()
@@ -147,11 +166,12 @@ if uploaded_file is not None:
             elif name in gchip_members: return 'Gchip'
             else: return 'Other / Unassigned'
 
+        # 將團隊歸屬標記寫入 DataFrame (確保 Aggregate 之前有 Team 可以分)
         df_tester['Team'] = df_tester['Customer Requestor'].apply(map_team)
         df_eng['Team'] = df_eng['Customer Requestor'].apply(map_team)
 
         # ==========================================
-        # 🏢 專業商務圖表主題設定 (Professional Corporate Theme)
+        # 🏢 專業商務圖表主題設定
         # ==========================================
         plt.style.use('default')
         corporate_params = {
@@ -182,16 +202,15 @@ if uploaded_file is not None:
                 else:
                     filtered_df = df
                 
-                # --- ✨ 表格設定優化：加入互動式 Task Details 欄位 ---
                 st.dataframe(
                     filtered_df, 
                     use_container_width=True,
-                    hide_index=True,  # 隱藏醜醜的數字編號
+                    hide_index=True,  
                     column_config={
                         "Task Details": st.column_config.TextColumn(
                             "📋 任務說明 (點擊展開)",
-                            help="點擊此欄位的儲存格，即可查看該項目的完整工作內容",
-                            width="medium" # 設定較寬的欄位
+                            help="點擊此欄位的儲存格，即可查看區分 CSO 與 Gchip 的完整工作內容",
+                            width="medium" 
                         )
                     }
                 )
@@ -224,7 +243,7 @@ if uploaded_file is not None:
             st.divider()
 
         # ==========================================
-        # 繪製圖表 (改用強化的聚合函數 aggregate_data)
+        # 繪製圖表 (使用具備團隊區分功能的 aggregate_data)
         # ==========================================
         
         st.subheader("🏢 團隊歸屬分析 / Team Analysis")
