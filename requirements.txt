@@ -1,7 +1,6 @@
 streamlit
 pandas
 pip 
-install 
 matplotlib 
 seaborn 
 openpyxl
