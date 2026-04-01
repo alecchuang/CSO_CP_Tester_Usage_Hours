@@ -28,7 +28,6 @@ def split_and_distribute(df, target_col, hours_col):
 # ==========================================
 # 網頁主程式開始
 # ==========================================
-# 強制設定 Streamlit 網頁佈局為寬螢幕
 st.set_page_config(page_title="Hours Analysis Dashboard", layout="wide")
 
 st.title("📊 機台與工程師時數進階分析儀表板")
@@ -36,14 +35,19 @@ st.title("📊 機台與工程師時數進階分析儀表板")
 # --- 版本說明 (Release Notes) ---
 with st.expander("🚀 版本更新紀錄 / Release Notes (點擊展開)"):
     st.markdown("""
-    * **v12 (最新版)**: 🎨 **視覺大升級**！導入深色科技感主題 (Dark Tech Theme)，加入高對比螢光配色與極簡網格，提升專業儀表板質感。
+    * **v13 (最新版)**: 🏢 **視覺風格優化**！移除高對比科技風，轉換為乾淨、明亮且具備商務質感的專業風格 (Professional Corporate Theme)，並修復版本紀錄顯示不全的問題。
+    * **v12**: 導入深色科技感主題 (Dark Tech Theme)，加入高對比螢光配色與極簡網格。
     * **v11**: 新增版本紀錄摺疊面板，優化 UI 引導說明。
-    * **v10**: 加入「團隊成員自定義」功能，支援 CSO/Gchip 互斥選擇。
+    * **v10**: 加入「團隊成員自定義」功能，支援 CSO/Gchip 互斥選擇與預設人員自動偵測。
     * **v9**: 在每個數據表格上方加入「動態篩選器 (Multiselect)」，圖表隨篩選結果即時連動。
-    * **v8**: 解決中文亂碼問題，將圖表內部文字統一轉換為純英文顯示。
-    * **v7**: 介面大改版，採用「左表格、右圖表」的並排設計。
-    * **v6**: 導入「多單位分割與時數均分邏輯 (處理 / , ; \\n 等符號)」。
-    * **v5**: 擴充分析維度，加入 TEMP、Customer Requestor、Tester 等統計。
+    * **v8**: 解決中文亂碼問題，將圖表內部文字（標題、軸線）統一轉換為純英文顯示。
+    * **v7**: 介面大改版，採用「左表格、右圖表」的並排設計，提升數據核對效率。
+    * **v6**: 核心演算法更新，導入「多單位分割與時數均分邏輯 (處理 / , ; \\n 等符號)」。
+    * **v5**: 擴充分析維度，加入 TEMP、Customer Requestor、Tester 等進階統計。
+    * **v4**: 加入檔案上傳功能 (File Uploader)，支援使用者自行上傳 Excel 進行分析。
+    * **v3**: 轉換為 Streamlit Web App 互動式架構。
+    * **v2**: 加入 Engineering Hours 分頁數據解析。
+    * **v1**: 初始版本，解析 Tester Hours 並產生基礎月度統計長條圖。
     """)
 
 st.info("""
@@ -111,32 +115,25 @@ if uploaded_file is not None:
         df_eng['Team'] = df_eng['Customer Requestor'].apply(map_team)
 
         # ==========================================
-        # 🎨 科技感專業圖表主題設定 (Dark Tech Theme)
+        # 🏢 專業商務圖表主題設定 (Professional Corporate Theme)
         # ==========================================
-        # 啟用 Matplotlib 內建的深色背景
-        plt.style.use('dark_background')
+        # 恢復使用預設的亮色背景
+        plt.style.use('default')
         
-        # 針對細節做賽博龐克/科技感微調
-        tech_params = {
+        corporate_params = {
             "font.sans-serif": ["Microsoft JhengHei", "PingFang TC", "Arial Unicode MS", "SimHei", "sans-serif"],
             "axes.unicode_minus": False,
-            "axes.facecolor": "#0E1117",     # 對齊 Streamlit 的深色背景
-            "figure.facecolor": "#0E1117",   # 讓圖表邊緣隱形
-            "axes.edgecolor": "#333333",     # 邊框顏色改暗
-            "grid.color": "#2B2B2B",         # 極簡暗色網格
-            "grid.linestyle": "--",          # 虛線網格更有科技感
-            "grid.alpha": 0.7,
-            "text.color": "#E0E0E0",         # 標題文字顏色
-            "axes.labelcolor": "#A0A0A0",    # X/Y 軸標籤顏色
-            "xtick.color": "#888888",
-            "ytick.color": "#888888",
+            "figure.facecolor": "#FFFFFF",      # 純白圖表背景
+            "axes.facecolor": "#F8F9FA",        # 淺灰圖表內部底色，增加數據閱讀的層次感
+            "grid.color": "#DEE2E6",            # 柔和的網格線
+            "grid.linestyle": "-",              # 實線網格顯得更穩重
+            "grid.alpha": 0.8,
+            "text.color": "#212529",            # 深灰文字 (非純黑，減少視覺疲勞)
+            "axes.labelcolor": "#495057",       # X/Y 軸標籤顏色
+            "xtick.color": "#6C757D",
+            "ytick.color": "#6C757D",
         }
-        # 套用設定
-        sns.set_theme(style="darkgrid", rc=tech_params)
-
-        # 自定義高對比螢光色系 (Neon Palettes)
-        neon_cyan = ['#00F0FF', '#0080FF', '#00FF9D', '#FF00AA', '#FFE600', '#B000FF']
-        neon_orange = ['#FF4500', '#FF8C00', '#FFD700', '#00FF00', '#00FFFF', '#FF00FF']
+        sns.set_theme(style="whitegrid", rc=corporate_params)
 
         def render_table_and_chart(ui_title, chart_title, df, x_col, y_col, hue_col=None, filter_col=None, custom_palette=None):
             st.markdown(f"#### {ui_title}")
@@ -150,7 +147,6 @@ if uploaded_file is not None:
                     filtered_df = df[df[filter_col].isin(selected_items)]
                 else:
                     filtered_df = df
-                # 讓左側表格也適應深色外觀
                 st.dataframe(filtered_df, use_container_width=True)
             
             with col_chart:
@@ -159,23 +155,23 @@ if uploaded_file is not None:
                 else:
                     fig, ax = plt.subplots(figsize=(10, 4.5))
                     
-                    # 繪製長條圖並加上一點點邊框增加立體感
+                    # 繪製長條圖，加入細微的白色邊框區分數據柱
                     if hue_col:
-                        sns.barplot(data=filtered_df, x=x_col, y=y_col, hue=hue_col, ax=ax, palette=custom_palette, edgecolor="#0E1117", linewidth=1.5)
+                        sns.barplot(data=filtered_df, x=x_col, y=y_col, hue=hue_col, ax=ax, palette=custom_palette, edgecolor="#FFFFFF", linewidth=1.2)
                         # 圖例文字顏色設定
                         legend = ax.legend(title=hue_col, bbox_to_anchor=(1.05, 1), loc='upper left', frameon=False)
-                        plt.setp(legend.get_texts(), color='#E0E0E0')
-                        plt.setp(legend.get_title(), color='#A0A0A0')
+                        plt.setp(legend.get_texts(), color='#495057')
+                        plt.setp(legend.get_title(), color='#212529', fontweight='bold')
                     else:
-                        sns.barplot(data=filtered_df, x=x_col, y=y_col, ax=ax, palette=custom_palette, edgecolor="#0E1117", linewidth=1.5)
+                        sns.barplot(data=filtered_df, x=x_col, y=y_col, ax=ax, palette=custom_palette, edgecolor="#FFFFFF", linewidth=1.2)
                     
-                    # 隱藏上方和右方的框線 (更俐落的現代感)
+                    # 簡化外框線，僅保留底部與左側
                     ax.spines['top'].set_visible(False)
                     ax.spines['right'].set_visible(False)
-                    ax.spines['left'].set_color('#333333')
-                    ax.spines['bottom'].set_color('#333333')
+                    ax.spines['left'].set_color('#CED4DA')
+                    ax.spines['bottom'].set_color('#CED4DA')
 
-                    ax.set_title(chart_title, fontweight='bold', pad=15, color='#FFFFFF')
+                    ax.set_title(chart_title, fontweight='bold', pad=15, color='#212529')
                     ax.set_xlabel(x_col, labelpad=10)
                     ax.set_ylabel(y_col, labelpad=10)
                     plt.xticks(rotation=45, ha='right')
@@ -184,33 +180,36 @@ if uploaded_file is not None:
             st.divider()
 
         # ==========================================
-        # 繪製圖表 (套用高質感科技色彩)
+        # 繪製圖表 (套用專業商務色彩)
         # ==========================================
         
         st.subheader("🏢 團隊歸屬分析 / Team Analysis")
         team_tester_hours = df_tester.groupby('Team')['Tester Total Hours'].sum().round(2).reset_index().sort_values('Tester Total Hours', ascending=False)
         team_eng_hours = df_eng.groupby('Team')['Engineering Support Hours'].sum().round(2).reset_index().sort_values('Engineering Support Hours', ascending=False)
-        render_table_and_chart("🟦 [Tester Hours] 依團隊統計", "[Tester Hours] Total by Team", team_tester_hours, 'Team', 'Tester Total Hours', filter_col='Team', custom_palette=['#00F0FF', '#333333', '#888888'])
-        render_table_and_chart("🟧 [Engineering Hours] 依團隊統計", "[Engineering Hours] Total by Team", team_eng_hours, 'Team', 'Engineering Support Hours', filter_col='Team', custom_palette=['#FF4500', '#333333', '#888888'])
+        # 使用穩重的深藍與沉穩橘
+        render_table_and_chart("🟦 [Tester Hours] 依團隊統計", "[Tester Hours] Total by Team", team_tester_hours, 'Team', 'Tester Total Hours', filter_col='Team', custom_palette=['#2B5B84', '#E67E22', '#95A5A6'])
+        render_table_and_chart("🟧 [Engineering Hours] 依團隊統計", "[Engineering Hours] Total by Team", team_eng_hours, 'Team', 'Engineering Support Hours', filter_col='Team', custom_palette=['#2980B9', '#D35400', '#7F8C8D'])
 
         st.subheader("📅 每月趨勢分析 / Monthly Trends")
         monthly_tester_hours = df_tester.groupby(['Month', 'Tester #'])['Tester Total Hours'].sum().round(2).reset_index()
         monthly_eng_hours = df_eng.groupby(['Month', 'Name'])['Engineering Support Hours'].sum().round(2).reset_index()
-        render_table_and_chart("🟦 [Tester Hours] 每月機台時數", "[Tester Hours] Monthly by Tester", monthly_tester_hours, 'Month', 'Tester Total Hours', hue_col='Tester #', filter_col='Tester #', custom_palette=neon_cyan)
-        render_table_and_chart("🟧 [Engineering Hours] 每月工程師時數", "[Engineering Hours] Monthly by Engineer", monthly_eng_hours, 'Month', 'Engineering Support Hours', hue_col='Name', filter_col='Name', custom_palette=neon_orange)
+        # 採用 Seaborn 內建的柔和與經典商務色系
+        render_table_and_chart("🟦 [Tester Hours] 每月機台時數", "[Tester Hours] Monthly by Tester", monthly_tester_hours, 'Month', 'Tester Total Hours', hue_col='Tester #', filter_col='Tester #', custom_palette='deep')
+        render_table_and_chart("🟧 [Engineering Hours] 每月工程師時數", "[Engineering Hours] Monthly by Engineer", monthly_eng_hours, 'Month', 'Engineering Support Hours', hue_col='Name', filter_col='Name', custom_palette='muted')
 
         st.subheader("🔍 進階維度分析 / Advanced Dimensions")
         temp_hours = df_tester.groupby('TEMP')['Tester Total Hours'].sum().round(2).reset_index().sort_values('Tester Total Hours', ascending=False)
         eng_tester_hours = df_eng.groupby('Tester')['Engineering Support Hours'].sum().round(2).reset_index().sort_values('Engineering Support Hours', ascending=False)
-        # 使用 seaborn 內建的深色高對比色票 'mako' 和 'inferno'
-        render_table_and_chart("🟦 [Tester Hours] 依溫度 (TEMP) 統計", "[Tester Hours] Total by TEMP", temp_hours, 'TEMP', 'Tester Total Hours', filter_col='TEMP', custom_palette='mako')
-        render_table_and_chart("🟧 [Engineering Hours] 依機台 (Tester) 統計", "[Engineering Hours] Total by Tester", eng_tester_hours, 'Tester', 'Engineering Support Hours', filter_col='Tester', custom_palette='inferno')
+        # 採用漸層的藍綠色系與暖色系，適合呈現漸進的數值(如溫度、機台產能)
+        render_table_and_chart("🟦 [Tester Hours] 依溫度 (TEMP) 統計", "[Tester Hours] Total by TEMP", temp_hours, 'TEMP', 'Tester Total Hours', filter_col='TEMP', custom_palette='Blues_r')
+        render_table_and_chart("🟧 [Engineering Hours] 依機台 (Tester) 統計", "[Engineering Hours] Total by Tester", eng_tester_hours, 'Tester', 'Engineering Support Hours', filter_col='Tester', custom_palette='Oranges_r')
 
         st.subheader("👤 客戶需求者分析 / Requestor Analysis")
         tester_req_hours = df_tester.groupby('Customer Requestor')['Tester Total Hours'].sum().round(2).reset_index().sort_values('Tester Total Hours', ascending=False)
         eng_req_hours = df_eng.groupby('Customer Requestor')['Engineering Support Hours'].sum().round(2).reset_index().sort_values('Engineering Support Hours', ascending=False)
-        render_table_and_chart("🟦 [Tester Hours] 依客戶統計", "[Tester Hours] Total by Requestor", tester_req_hours, 'Customer Requestor', 'Tester Total Hours', filter_col='Customer Requestor', custom_palette='crest')
-        render_table_and_chart("🟧 [Engineering Hours] 依客戶統計", "[Engineering Hours] Total by Requestor", eng_req_hours, 'Customer Requestor', 'Engineering Support Hours', filter_col='Customer Requestor', custom_palette='flare')
+        # 使用多色但飽和度較低的商務色系
+        render_table_and_chart("🟦 [Tester Hours] 依客戶統計", "[Tester Hours] Total by Requestor", tester_req_hours, 'Customer Requestor', 'Tester Total Hours', filter_col='Customer Requestor', custom_palette='Set2')
+        render_table_and_chart("🟧 [Engineering Hours] 依客戶統計", "[Engineering Hours] Total by Requestor", eng_req_hours, 'Customer Requestor', 'Engineering Support Hours', filter_col='Customer Requestor', custom_palette='Set1')
 
     except Exception as e:
         st.error(f"執行時發生錯誤: {e}")
