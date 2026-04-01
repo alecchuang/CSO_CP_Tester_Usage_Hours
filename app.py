@@ -3,46 +3,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import re
-import os
-import urllib.request
-import matplotlib.font_manager as fm
-
-# 設定網頁標題與寬度 (這行必須是 Streamlit 的第一個指令)
-st.set_page_config(page_title="Hours Analysis Dashboard", layout="wide")
-
-# ==========================================
-# 🌟 終極解決方案：動態下載並載入中文字型 (專治 Streamlit Cloud 亂碼) 🌟
-# ==========================================
-@st.cache_resource
-def setup_chinese_font():
-    """自動下載 Google Noto Sans TC 字型並註冊到 matplotlib"""
-    font_path = 'NotoSansTC-Regular.ttf'
-    # 這是 Google Fonts 官方 GitHub 的直接下載點
-    font_url = 'https://github.com/google/fonts/raw/main/ofl/notosanstc/NotoSansTC-Regular.ttf'
-    
-    try:
-        # 如果伺服器上沒有這個字型檔案，就自動下載
-        if not os.path.exists(font_path):
-            urllib.request.urlretrieve(font_url, font_path)
-            
-        # 將下載的字型強制加入 matplotlib 的字型庫中
-        fm.fontManager.addfont(font_path)
-        font_prop = fm.FontProperties(fname=font_path)
-        return font_prop.get_name() # 回傳正確的字型內部名稱
-    except Exception as e:
-        print(f"字型設定失敗: {e}")
-        return "sans-serif" # 若下載失敗的備案
-
-# 執行字型設定
-font_name = setup_chinese_font()
-
-# 將字型套用到 seaborn 與 matplotlib 全域設定中
-custom_params = {
-    "font.sans-serif": [font_name, "sans-serif"],
-    "axes.unicode_minus": False
-}
-sns.set_theme(style="whitegrid", rc=custom_params)
-
 
 # ==========================================
 # 定義：時數分割與均分函數
@@ -70,6 +30,7 @@ def split_and_distribute(df, target_col, hours_col):
 # ==========================================
 # 網頁主程式開始
 # ==========================================
+st.set_page_config(page_title="Hours Analysis Dashboard", layout="wide")
 st.title("📊 機台與工程師時數進階分析儀表板")
 
 uploaded_file = st.file_uploader("請上傳您的 Excel 時數紀錄表", type=["xlsx", "xls"])
@@ -119,10 +80,13 @@ if uploaded_file is not None:
         st.divider()
 
         # ==========================================
-        # 繪圖排版函數
+        # 繪圖排版函數 (分離中文UI與英文圖表標題)
         # ==========================================
-        def render_table_and_chart(title, df, x_col, y_col, hue_col=None, palette=None):
-            st.markdown(f"#### {title}")
+        sns.set_theme(style="whitegrid")
+
+        def render_table_and_chart(ui_title, chart_title, df, x_col, y_col, hue_col=None, palette=None):
+            # 網頁上的文字保持中文
+            st.markdown(f"#### {ui_title}")
             
             col_data, col_chart = st.columns([1, 2])
             
@@ -137,7 +101,8 @@ if uploaded_file is not None:
                 else:
                     sns.barplot(data=df, x=x_col, y=y_col, ax=ax, palette=palette)
                 
-                ax.set_title(title, fontweight='bold')
+                # 圖表內的文字全部使用英文
+                ax.set_title(chart_title, fontweight='bold')
                 ax.set_xlabel(x_col)
                 ax.set_ylabel(y_col)
                 plt.xticks(rotation=45, ha='right')
@@ -147,19 +112,43 @@ if uploaded_file is not None:
             st.divider()
 
         # ==========================================
-        # 繪製各區塊
+        # 繪製各區塊 (傳入 中文 UI 標題 與 英文 圖表標題)
         # ==========================================
-        st.subheader("📅 每月趨勢分析")
-        render_table_and_chart("🟦 [Tester Hours] 每月機台總使用時數", monthly_tester_hours, 'Month', 'Tester Total Hours', hue_col='Tester #')
-        render_table_and_chart("🟧 [Engineering Hours] 每月工程師支援時數", monthly_eng_hours, 'Month', 'Engineering Support Hours', hue_col='Name')
+        st.subheader("📅 每月趨勢分析 (Monthly Trends)")
+        render_table_and_chart(
+            "🟦 [Tester Hours] 每月機台總使用時數", 
+            "[Tester Hours] Monthly Total by Tester", 
+            monthly_tester_hours, 'Month', 'Tester Total Hours', hue_col='Tester #'
+        )
+        render_table_and_chart(
+            "🟧 [Engineering Hours] 每月工程師支援時數", 
+            "[Engineering Hours] Monthly Total by Engineer", 
+            monthly_eng_hours, 'Month', 'Engineering Support Hours', hue_col='Name'
+        )
 
-        st.subheader("🔍 進階維度分析 (溫度與機台)")
-        render_table_and_chart("🟦 [Tester Hours] 依溫度 (TEMP) 統計機台時數", temp_hours, 'TEMP', 'Tester Total Hours', palette='Set2')
-        render_table_and_chart("🟧 [Engineering Hours] 依機台 (Tester) 統計工程師時數", eng_tester_hours, 'Tester', 'Engineering Support Hours', palette='magma')
+        st.subheader("🔍 進階維度分析 (Advanced Dimensions)")
+        render_table_and_chart(
+            "🟦 [Tester Hours] 依溫度 (TEMP) 統計機台時數", 
+            "[Tester Hours] Total Hours by TEMP", 
+            temp_hours, 'TEMP', 'Tester Total Hours', palette='Set2'
+        )
+        render_table_and_chart(
+            "🟧 [Engineering Hours] 依機台 (Tester) 統計工程師時數", 
+            "[Engineering Hours] Total Hours by Tester", 
+            eng_tester_hours, 'Tester', 'Engineering Support Hours', palette='magma'
+        )
 
         st.subheader("👤 客戶需求者分析 (Customer Requestor)")
-        render_table_and_chart("🟦 [Tester Hours] 依客戶需求者統計", tester_req_hours, 'Customer Requestor', 'Tester Total Hours', palette='viridis')
-        render_table_and_chart("🟧 [Engineering Hours] 依客戶需求者統計", eng_req_hours, 'Customer Requestor', 'Engineering Support Hours', palette='rocket')
+        render_table_and_chart(
+            "🟦 [Tester Hours] 依客戶需求者統計", 
+            "[Tester Hours] Total Hours by Customer Requestor", 
+            tester_req_hours, 'Customer Requestor', 'Tester Total Hours', palette='viridis'
+        )
+        render_table_and_chart(
+            "🟧 [Engineering Hours] 依客戶需求者統計", 
+            "[Engineering Hours] Total Hours by Customer Requestor", 
+            eng_req_hours, 'Customer Requestor', 'Engineering Support Hours', palette='rocket'
+        )
 
     except ValueError as ve:
         st.error(f"讀取失敗：請確認上傳的 Excel 檔案內包含所需的欄位與分頁。\n\n詳細錯誤：{ve}")
