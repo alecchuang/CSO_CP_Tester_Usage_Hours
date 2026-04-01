@@ -3,6 +3,46 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import re
+import os
+import urllib.request
+import matplotlib.font_manager as fm
+
+# 設定網頁標題與寬度 (這行必須是 Streamlit 的第一個指令)
+st.set_page_config(page_title="Hours Analysis Dashboard", layout="wide")
+
+# ==========================================
+# 🌟 終極解決方案：動態下載並載入中文字型 (專治 Streamlit Cloud 亂碼) 🌟
+# ==========================================
+@st.cache_resource
+def setup_chinese_font():
+    """自動下載 Google Noto Sans TC 字型並註冊到 matplotlib"""
+    font_path = 'NotoSansTC-Regular.ttf'
+    # 這是 Google Fonts 官方 GitHub 的直接下載點
+    font_url = 'https://github.com/google/fonts/raw/main/ofl/notosanstc/NotoSansTC-Regular.ttf'
+    
+    try:
+        # 如果伺服器上沒有這個字型檔案，就自動下載
+        if not os.path.exists(font_path):
+            urllib.request.urlretrieve(font_url, font_path)
+            
+        # 將下載的字型強制加入 matplotlib 的字型庫中
+        fm.fontManager.addfont(font_path)
+        font_prop = fm.FontProperties(fname=font_path)
+        return font_prop.get_name() # 回傳正確的字型內部名稱
+    except Exception as e:
+        print(f"字型設定失敗: {e}")
+        return "sans-serif" # 若下載失敗的備案
+
+# 執行字型設定
+font_name = setup_chinese_font()
+
+# 將字型套用到 seaborn 與 matplotlib 全域設定中
+custom_params = {
+    "font.sans-serif": [font_name, "sans-serif"],
+    "axes.unicode_minus": False
+}
+sns.set_theme(style="whitegrid", rc=custom_params)
+
 
 # ==========================================
 # 定義：時數分割與均分函數
@@ -30,7 +70,6 @@ def split_and_distribute(df, target_col, hours_col):
 # ==========================================
 # 網頁主程式開始
 # ==========================================
-st.set_page_config(page_title="Hours Analysis Dashboard", layout="wide")
 st.title("📊 機台與工程師時數進階分析儀表板")
 
 uploaded_file = st.file_uploader("請上傳您的 Excel 時數紀錄表", type=["xlsx", "xls"])
@@ -55,7 +94,6 @@ if uploaded_file is not None:
         for col in ['Tester #', 'TEMP', 'Customer Requestor']:
             df_tester = split_and_distribute(df_tester, target_col=col, hours_col='Tester Total Hours')
 
-        # [匯總資料] 確保數字為小數點後兩位
         monthly_tester_hours = df_tester.groupby(['Month', 'Tester #'])['Tester Total Hours'].sum().round(2).reset_index()
         temp_hours = df_tester.groupby('TEMP')['Tester Total Hours'].sum().round(2).reset_index().sort_values('Tester Total Hours', ascending=False)
         tester_req_hours = df_tester.groupby('Customer Requestor')['Tester Total Hours'].sum().round(2).reset_index().sort_values('Tester Total Hours', ascending=False)
@@ -73,7 +111,6 @@ if uploaded_file is not None:
         for col in ['Name', 'Tester', 'Customer Requestor']:
             df_eng = split_and_distribute(df_eng, target_col=col, hours_col='Engineering Support Hours')
 
-        # [匯總資料]
         monthly_eng_hours = df_eng.groupby(['Month', 'Name'])['Engineering Support Hours'].sum().round(2).reset_index()
         eng_tester_hours = df_eng.groupby('Tester')['Engineering Support Hours'].sum().round(2).reset_index().sort_values('Engineering Support Hours', ascending=False)
         eng_req_hours = df_eng.groupby('Customer Requestor')['Engineering Support Hours'].sum().round(2).reset_index().sort_values('Engineering Support Hours', ascending=False)
@@ -82,19 +119,11 @@ if uploaded_file is not None:
         st.divider()
 
         # ==========================================
-        # 🌟 解決 Seaborn/Matplotlib 中文亂碼的核心設定 🌟
+        # 繪圖排版函數
         # ==========================================
-        # 將字型設定直接包裝進 seaborn 的 theme 裡面，防止被覆蓋
-        custom_params = {
-            "font.sans-serif": ["Microsoft JhengHei", "PingFang TC", "Arial Unicode MS", "SimHei", "WenQuanYi Micro Hei", "sans-serif"],
-            "axes.unicode_minus": False
-        }
-        sns.set_theme(style="whitegrid", rc=custom_params)
-
         def render_table_and_chart(title, df, x_col, y_col, hue_col=None, palette=None):
             st.markdown(f"#### {title}")
             
-            # 將畫面分割為左右兩欄
             col_data, col_chart = st.columns([1, 2])
             
             with col_data:
