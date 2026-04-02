@@ -124,23 +124,23 @@ is_eng = st.sidebar.toggle("🌐 Switch to English (全英文介面)", value=Fal
 TXT_APP_TITLE = "📊 Tester & Engineer Hours Advanced Dashboard" if is_eng else "📊 機台與工程師時數進階分析儀表板"
 TXT_REL_NOTES_TITLE = "🚀 Release Notes (Click to Expand)" if is_eng else "🚀 版本更新紀錄 / Release Notes (點擊展開)"
 TXT_REL_NOTES_CONTENT = """
-* **v26 (最新版)**: 🌐 **雙語系支援 (i18n)**！將全站字串抽離為文字變數，並在左側新增中英切換 Toggle 按鈕，可一鍵無縫切換語言。
+* **v27 (最新版)**: 🐛 **多國語系 Bug 修復**！解決了切換到英文版時 KPI 看板因變數未定義而引發的錯誤，確保中英雙語無縫切換。
+* **v26**: 🌐 **雙語系支援 (i18n)**！將全站字串抽離為文字變數，並在左側新增中英切換 Toggle 按鈕。
 * **v25**: 🌟 標題與維度微調！將「進階維度分析」重新命名，並為「依機台統計」補上月份維度。
 * **v24**: 🌟 排版邏輯調整！將「每月工程師時數」移至進階維度，將「依機台統計」移至每月趨勢。
-* **v23**: 🌟 動態 KPI 目標設定！最低標時數的機台數量設定移至左側，KPI 達標數據即時同步更新。
-* **v22**: 🌟 優化明細展開範圍！專注於每月趨勢與進階維度，移除不必要的頁面展開。
-* **v21**: 🌟 時數結構展開功能！總時數欄位升級為點擊展開格式，檢視 CSO 與 Gchip 明細。
-* **v20**: 🌟 無縫導覽與KPI升級！改用原生水平導覽列，新增動態計算的最低標使用時數。
-* **v1~v19**: 包含圖表渲染優化、防呆機制、拖曳上傳、均分邏輯等核心功能建置。
+* **v23**: 🌟 動態 KPI 目標設定！最低標時數的機台數量設定移至左側。
+* **v22**: 🌟 優化明細展開範圍！專注於每月趨勢與進階維度。
+* **v21**: 🌟 時數結構展開功能！
+* **v1~v20**: 包含圖表渲染優化、防呆機制、拖曳上傳、均分邏輯等核心功能建置。
 """ if not is_eng else """
-* **v26 (Latest)**: 🌐 **Bilingual Support (i18n)**! Extracted all texts into variables with a toggle button to switch seamlessly between English and Chinese.
+* **v27 (Latest)**: 🐛 **i18n Bug Fix**! Fixed a NameError on the KPI dashboard when switching to the English interface.
+* **v26**: 🌐 **Bilingual Support (i18n)**! Added an English/Chinese toggle button in the sidebar.
 * **v25**: 🌟 Title & dimension fine-tuning.
 * **v24**: 🌟 Layout logic adjustment.
-* **v23**: 🌟 Dynamic KPI Target Setting in the sidebar.
+* **v23**: 🌟 Dynamic KPI Target Setting.
 * **v22**: 🌟 Optimized breakdown scope.
 * **v21**: 🌟 Hours structure expandable breakdown.
-* **v20**: 🌟 Seamless navigation & KPI upgrade.
-* **v1~v19**: Core functionalities including algorithms, drag-and-drop upload, layout, and stability optimizations.
+* **v1~v20**: Core functionalities including algorithms, drag-and-drop upload, layout, and stability optimizations.
 """
 
 # --- 側邊欄變數 ---
@@ -300,8 +300,8 @@ if uploaded_file is not None:
         total_eng_hrs = df_eng['Engineering Support Hours'].sum()
         top_tester = df_tester.groupby('Tester #')['Tester Total Hours'].sum().idxmax() if not df_tester.empty else "N/A"
         
-        # [動態 KPI 文字變數]
-        TXT_KPI_TARGET = f"{TXT_KPI_TARGET_HOURS} ({tester_count} units/50%)" if is_eng else f"🎯 最低標使用時數 ({tester_count}台/50%)"
+        # [🌟 錯誤修復點：確保英文與中文都在同一行正確給予字串]
+        TXT_KPI_TARGET = f"🎯 Target Min Hours ({tester_count} units/50%)" if is_eng else f"🎯 最低標使用時數 ({tester_count}台/50%)"
         
         kpi1, kpi2, kpi3, kpi4 = st.columns(4)
         kpi1.metric(label=TXT_KPI_TOTAL_TESTER, value=f"{total_tester_hrs:,.1f} hrs")
@@ -347,7 +347,6 @@ if uploaded_file is not None:
                 }
                 
                 if show_breakdown:
-                    # 配合 aggregate_data 裡的動態名稱
                     txt_click_expand = "(Click to expand)" if is_eng else "(點擊展開)"
                     breakdown_col_name = f"⏱️ {y_col} {txt_click_expand}"
                     column_config[y_col] = None  
