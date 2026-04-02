@@ -10,7 +10,6 @@ import calendar
 # ==========================================
 st.set_page_config(page_title="Tester & Engineering Dashboard", layout="wide")
 
-# 翻譯字典 (嚴格保留原始中文設定，僅新增英文對照)
 LANG_DICT = {
     "TW": {
         "lang_selector": "🌐 選擇語言 / Select Language",
@@ -34,8 +33,8 @@ LANG_DICT = {
         "tab_monthly": "📅 每月趨勢分析",
         "tab_adv": "🌡️ 進階維度分析 (TEMP/ENG Member)",
         "tab_req": "👤 客戶需求者分析",
-        "filter_label": "🔍 篩選資料 (移除標籤以過濾數據)：",
-        "no_data": "⚠️ 已排除所有項目，無資料可供繪圖。",
+        "filter_label": "🔍 篩選資料：",
+        "no_data": "⚠️ 無資料可供顯示。",
         "col_task": "📋 任務說明 (點擊展開)",
         "col_detail": "⏱️ 時數明細 (點擊展開)",
         "cso_section": "--- CSO 任務 ---",
@@ -73,8 +72,8 @@ LANG_DICT = {
         "tab_monthly": "📅 Monthly Trend",
         "tab_adv": "🌡️ Advanced Dimension (TEMP/ENG Member)",
         "tab_req": "👤 Customer Requestor Analysis",
-        "filter_label": "🔍 Filter Data (Remove tags to exclude):",
-        "no_data": "⚠️ All items excluded. No data to plot.",
+        "filter_label": "🔍 Filter Data:",
+        "no_data": "⚠️ No data to display.",
         "col_task": "📋 Task Description (Click to Expand)",
         "col_detail": "⏱️ Hours Breakdown (Click to Expand)",
         "cso_section": "--- CSO Tasks ---",
@@ -92,12 +91,11 @@ LANG_DICT = {
     }
 }
 
-# 取得翻譯字串的輔助函數 (維持原始架構)
 def _t(key):
     return LANG_DICT[st.session_state.lang].get(key, key)
 
 # ==========================================
-# 2. 核心處理函數 (原始邏輯 100% 保留)
+# 2. 核心處理函數 
 # ==========================================
 def split_and_distribute(df, col_name, value_col):
     if col_name not in df.columns:
@@ -180,46 +178,47 @@ def render_table_and_chart(df, group_col, val_col, ui_title_key, chart_title, so
         return
         
     unique_vals = df[group_col].dropna().unique().tolist()
-    selected_vals = st.multiselect(f"{_t('filter_label')} {ui_title}", unique_vals, default=unique_vals, key=f"ms_{chart_title}")
     
-    filtered_df = df[df[group_col].isin(selected_vals)]
-    
-    if filtered_df.empty:
-        st.warning(_t("no_data"))
-        st.markdown("---")
-        return
-
-    agg_df = aggregate_data(filtered_df, group_col, val_col, show_breakdown=show_breakdown)
-    
+    # 建立左右分欄
     col1, col2 = st.columns([1, 2])
     
     with col1:
-        cfg = {
-            _t('col_task'): st.column_config.TextColumn(width="medium"),
-            _t('col_detail'): st.column_config.TextColumn(width="small")
-        }
-        st.dataframe(agg_df, use_container_width=True, hide_index=True, column_config=cfg)
+        # 將篩選器完美置入左側表格的正上方
+        selected_vals = st.multiselect(f"{_t('filter_label')} {ui_title}", unique_vals, default=unique_vals, key=f"ms_{chart_title}")
+        filtered_df = df[df[group_col].isin(selected_vals)]
+        
+        if filtered_df.empty:
+            st.warning(_t("no_data"))
+        else:
+            agg_df = aggregate_data(filtered_df, group_col, val_col, show_breakdown=show_breakdown)
+            cfg = {
+                _t('col_task'): st.column_config.TextColumn(width="medium"),
+                _t('col_detail'): st.column_config.TextColumn(width="small")
+            }
+            st.dataframe(agg_df, use_container_width=True, hide_index=True, column_config=cfg)
         
     with col2:
-        # 圖表標題與軸維持純英文設定
-        sns.set_theme(style="whitegrid")
-        fig, ax = plt.subplots(figsize=(8, 4))
-        sns.barplot(data=agg_df, x=group_col, y=val_col, hue=group_col, palette=palette, ax=ax, legend=False, edgecolor="#FFFFFF")
-        ax.set_title(chart_title, fontweight='bold', color="#212529", pad=15)
-        ax.set_xlabel(group_col, color="#212529", labelpad=10)
-        ax.set_ylabel(val_col, color="#212529", labelpad=10)
-        plt.xticks(rotation=45, ha='right')
-        
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        
-        st.pyplot(fig)
-        plt.close(fig)
+        if filtered_df.empty:
+            st.info(_t("no_data"))
+        else:
+            sns.set_theme(style="whitegrid")
+            fig, ax = plt.subplots(figsize=(8, 4))
+            sns.barplot(data=agg_df, x=group_col, y=val_col, hue=group_col, palette=palette, ax=ax, legend=False, edgecolor="#FFFFFF")
+            ax.set_title(chart_title, fontweight='bold', color="#212529", pad=15)
+            ax.set_xlabel(group_col, color="#212529", labelpad=10)
+            ax.set_ylabel(val_col, color="#212529", labelpad=10)
+            plt.xticks(rotation=45, ha='right')
+            
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            
+            st.pyplot(fig)
+            plt.close(fig)
         
     st.markdown("---")
 
 # ==========================================
-# 3. 網頁主程式與側邊欄 (維持原始邏輯)
+# 3. 網頁主程式與側邊欄
 # ==========================================
 if "lang" not in st.session_state:
     st.session_state.lang = "TW"
@@ -234,7 +233,6 @@ with st.sidebar:
     st.subheader(_t("kpi_settings"))
     machine_count = st.number_input(_t("machine_count"), min_value=1, value=10, step=1)
 
-# 主標題與提示
 title_text = "📊 設備與工程時數營運儀表板" if st.session_state.lang == "TW" else "📊 Tester & Engineering Hours Dashboard"
 st.title(title_text)
 
@@ -337,11 +335,12 @@ else:
         st.error(f"發生未知的錯誤：{e}")
 
 # ==========================================
-# 4. 版本更新紀錄 (維持原始邏輯與文字)
+# 4. 版本更新紀錄
 # ==========================================
 st.markdown("<br><br>", unsafe_allow_html=True)
 with st.expander(_t("release_notes")):
     st.markdown("""
+    * **V27**: 修復介面排版，將多選篩選器重新收納至左側數據表格的正上方，還原最直覺的資料檢視動線。
     * **V26**: 加入了雙語介面切換 (支援中文與英文)，保證底層邏輯與原始版本完全一致，僅翻譯文字。
     * **V25**: 加入時數明細展開功能，升級表格 UI，使用 `st.column_config`。
     * **V24**: 將介面設計翻新為專業商務風 (Professional Corporate Theme)，提升易讀性。
