@@ -124,7 +124,8 @@ is_eng = st.sidebar.toggle("🌐 Switch to English (全英文介面)", value=Fal
 TXT_APP_TITLE = "📊 Tester & Engineer Hours Advanced Dashboard" if is_eng else "📊 機台與工程師時數進階分析儀表板"
 TXT_REL_NOTES_TITLE = "🚀 Release Notes (Click to Expand)" if is_eng else "🚀 版本更新紀錄 / Release Notes (點擊展開)"
 TXT_REL_NOTES_CONTENT = """
-* **v28 (最新版)**: 📂 **多檔案合併分析支援**！上傳區塊現在支援一次選取多個 Excel 檔案，系統會自動在背景將相同分頁的數據合併後再進行分析，省去人工整併資料的時間！
+* **v29 (最新版)**: 📅 **月份篩選功能**！在左側邊欄新增了「選擇統計月份」的過濾器，自動抓取資料涵蓋的所有月份，讓您可以自由勾選欲統計的時間範圍。
+* **v28**: 📂 多檔案合併分析支援！上傳區塊現在支援一次選取多個 Excel 檔案，系統會自動在背景將相同分頁的數據合併。
 * **v27**: 🐛 多國語系 Bug 修復！解決了切換英文版時 KPI 看板因變數未定義引發的錯誤。
 * **v26**: 🌐 雙語系支援 (i18n)！全站字串抽離，支援中英切換 Toggle 鍵無縫切換語言。
 * **v25**: 🌟 標題與維度微調！重新命名進階維度，並為「依機台統計」補上月份維度。
@@ -135,7 +136,8 @@ TXT_REL_NOTES_CONTENT = """
 * **v20**: 🌟 無縫導覽與KPI升級！水平導覽列與動態最低標時數。
 * **v1~v19**: 包含圖表渲染優化、防呆機制、拖曳上傳、均分邏輯等核心功能建置。
 """ if not is_eng else """
-* **v28 (Latest)**: 📂 **Multiple File Upload & Merge Support**! The upload section now supports multiple files simultaneously. The system automatically merges data from matching sheets across all files before analysis.
+* **v29 (Latest)**: 📅 **Month Filter added**! A new month selection filter in the sidebar allows you to specify the exact months to analyze.
+* **v28**: 📂 Multiple File Upload & Merge Support! The system automatically merges data from matching sheets across all files before analysis.
 * **v27**: 🐛 i18n Bug Fix! Fixed a NameError on the KPI dashboard.
 * **v26**: 🌐 Bilingual Support (i18n)! Added an English/Chinese toggle button.
 * **v25**: 🌟 Title & dimension fine-tuning.
@@ -152,15 +154,16 @@ TXT_SIDEBAR_CTRL = "⚙️ Control Panel" if is_eng else "⚙️ 控制面板 (C
 TXT_SIDEBAR_GUIDE = """
 **💡 Quick Guide:**
 1. Upload **one or more** Excel files below.
-2. Set KPI targets & Team definitions.
+2. Select Months, set KPI targets & Team definitions.
 3. Select analysis views on the right.
 """ if is_eng else """
 **💡 操作指南：**
 1. 於下方上傳 **一個或多個** Excel 檔案。
-2. 設定 KPI 的機台總數與團隊成員。
+2. 選擇統計月份、設定 KPI 與團隊成員。
 3. 在右側主畫面選擇不同分析維度。
 """
 TXT_UPLOAD_FILE = "📂 Upload Excel File(s)" if is_eng else "📂 上傳 Excel 紀錄表 (支援多選)"
+TXT_MONTH_FILTER = "📅 Select Months to Analyze" if is_eng else "📅 選擇統計月份"
 TXT_KPI_SETTING = "🎯 KPI Target Settings" if is_eng else "🎯 KPI 目標設定"
 TXT_TESTER_COUNT_LABEL = "Set total testers (for Min Target Hours)" if is_eng else "設定機台總數量 (供計算最低標時數)"
 TXT_TEAM_DEF = "👥 Team Members Definition" if is_eng else "👥 團隊成員定義"
@@ -225,14 +228,8 @@ with st.sidebar:
     st.header(TXT_SIDEBAR_CTRL)
     st.info(TXT_SIDEBAR_GUIDE)
     
-    # 🌟 重點更新：設定 accept_multiple_files=True
     uploaded_files = st.file_uploader(TXT_UPLOAD_FILE, type=["xlsx", "xls"], accept_multiple_files=True)
-    
-    st.divider()
-    st.subheader(TXT_KPI_SETTING)
-    tester_count = st.number_input(TXT_TESTER_COUNT_LABEL, min_value=1, value=10, step=1)
 
-# 當上傳檔案陣列不是空的，就開始處理
 if uploaded_files:
     try:
         # --- 資料預處理 (支援多檔案合併) ---
@@ -241,18 +238,15 @@ if uploaded_files:
         list_df_tester_raw = []
         list_df_eng_raw = []
         
-        # 迴圈讀取每一個上傳的檔案，並加到暫存陣列中
         for file in uploaded_files:
             temp_tester = pd.read_excel(file, sheet_name="Tester Hours", skiprows=3)
             temp_eng = pd.read_excel(file, sheet_name="Engineering Hours")
             list_df_tester_raw.append(temp_tester)
             list_df_eng_raw.append(temp_eng)
             
-        # 將所有的檔案數據上下合併 (Concat) 成為一張大表
         df_tester_raw = pd.concat(list_df_tester_raw, ignore_index=True)
         df_eng_raw = pd.concat(list_df_eng_raw, ignore_index=True)
         
-        # 接著進行原本的清理邏輯
         df_tester = df_tester_raw[['Date', 'Tester #', 'Tester Total Hours', 'TEMP', 'Customer Requestor', target_detail_col]].copy()
         df_tester.rename(columns={target_detail_col: 'Task Details'}, inplace=True)
         df_tester.dropna(subset=['Date', 'Tester #', 'Tester Total Hours'], how='all', inplace=True)
@@ -269,13 +263,32 @@ if uploaded_files:
         df_eng['Month'] = df_eng['Date'].dt.to_period('M').astype(str)
         df_eng['Engineering Support Hours'] = pd.to_numeric(df_eng['Engineering Support Hours'], errors='coerce').fillna(0)
 
+        # 🌟 側邊欄：月份篩選過濾器 
+        with st.sidebar:
+            st.divider()
+            all_months = sorted(list(set(df_tester['Month'].unique()) | set(df_eng['Month'].unique())))
+            selected_months = st.multiselect(TXT_MONTH_FILTER, options=all_months, default=all_months)
+            
+            # 根據使用者選擇的月份過濾資料
+            if selected_months:
+                df_tester = df_tester[df_tester['Month'].isin(selected_months)]
+                df_eng = df_eng[df_eng['Month'].isin(selected_months)]
+            else:
+                df_tester = df_tester.iloc[0:0] # 若全取消勾選，清空資料
+                df_eng = df_eng.iloc[0:0]
+        
+        # 進行時數均分 (過濾月份後再均分，提高效能)
         for col in ['Tester #', 'TEMP', 'Customer Requestor']:
             df_tester = split_and_distribute(df_tester, target_col=col, hours_col='Tester Total Hours')
         for col in ['Name', 'Tester', 'Customer Requestor']:
             df_eng = split_and_distribute(df_eng, target_col=col, hours_col='Engineering Support Hours')
 
-        # --- 側邊欄：團隊成員定義 ---
+        # --- 側邊欄：KPI 設定與團隊成員定義 ---
         with st.sidebar:
+            st.divider()
+            st.subheader(TXT_KPI_SETTING)
+            tester_count = st.number_input(TXT_TESTER_COUNT_LABEL, min_value=1, value=10, step=1)
+            
             st.divider()
             st.subheader(TXT_TEAM_DEF)
             all_requestors = sorted(list(set(df_tester['Customer Requestor'].unique()) | set(df_eng['Customer Requestor'].unique())))
@@ -306,9 +319,9 @@ if uploaded_files:
         
         total_tester_hrs = df_tester['Tester Total Hours'].sum()
         
-        unique_months = df_tester['Month'].dropna().unique()
+        # 🌟 根據使用者「勾選的月份」精準計算總天數
         total_days = 0
-        for m in unique_months:
+        for m in selected_months:
             try: total_days += pd.Period(m).days_in_month
             except: pass
         if total_days == 0: total_days = 30
