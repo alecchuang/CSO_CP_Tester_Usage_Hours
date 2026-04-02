@@ -29,7 +29,7 @@ def split_and_distribute(df, target_col, hours_col):
 def aggregate_data(df, group_by_cols, hours_col, show_breakdown=True):
     if isinstance(group_by_cols, str): group_by_cols = [group_by_cols]
     
-    breakdown_col = f"⏱️ {hours_col} (點擊展開)"
+    breakdown_col = f"⏱️ {hours_col} (Open)"
     
     # 決定要回傳哪些欄位
     columns_to_return = group_by_cols + [hours_col, 'Task Details']
