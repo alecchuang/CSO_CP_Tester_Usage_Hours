@@ -10,7 +10,7 @@ import calendar
 # ==========================================
 st.set_page_config(page_title="Tester & Engineering Dashboard", layout="wide")
 
-# 解決 Matplotlib 中文顯示問題 (優先採用系統內建中文字型) [cite: 34]
+# 解決 Matplotlib 中文顯示問題 (優先採用系統內建中文字型)
 plt.rcParams['font.sans-serif'] = ['Microsoft JhengHei', 'PingFang TC', 'SimHei', 'Arial Unicode MS', 'sans-serif']
 plt.rcParams['axes.unicode_minus'] = False
 
@@ -74,7 +74,12 @@ def split_and_distribute(df, col_to_split, hours_col):
     
     new_rows = []
     for _, row in df.iterrows():
-        entities = [e.strip() for e in row[col_to_split].split(',') if e.strip()]
+        # [V28 FIX] Force string conversion and handle 'nan' to prevent 'float object has no attribute split'
+        val = str(row[col_to_split]).strip()
+        if val.lower() == 'nan' or not val:
+            continue
+            
+        entities = [e.strip() for e in val.split(',') if e.strip()]
         if not entities:
             continue
             
@@ -323,6 +328,7 @@ else:
 # ==========================================
 with st.expander(t("📝 Release Notes (Version History)", "📝 版本紀錄 (Release Notes)")):
     st.markdown(t("""
+    * **v28:** Fixed a Pandas `float` type conversion bug in the data distribution algorithm when encountering blank cells.
     * **v27:** Added interactive English/Chinese language toggle in the sidebar.
     * **v26:** Translated the entire user interface and text elements to English for corporate standardization.
     * **v25:** Adjusted dimensional names and aligned engineering tester data with a monthly timeline.
@@ -339,6 +345,7 @@ with st.expander(t("📝 Release Notes (Version History)", "📝 版本紀錄 (R
     * **v14:** Created 'Task Description' aggregation algorithm with interactive expanding columns.
     * **v1 - v13:** Core setup, aggregation, charting, and multi-unit time-splitting logic.
     """, """
+    * **v28:** 修復 Pandas 讀取空值與數字時自動轉型為 float 導致 `.split()` 報錯的邊界錯誤。
     * **v27:** 於左側控制面板新增中英文雙語切換功能，支援即時翻譯。
     * **v26:** 將所有 UI 元素強制轉為英文以符合外商標準（現已整合進 v27 雙語系統）。
     * **v25:** 微調分頁名稱為進階維度分析，並對齊工程師與機台的月份時間軸。
