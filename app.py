@@ -2,353 +2,377 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-import numpy as np
-import calendar
+import re
 
 # ==========================================
-# 1. 頁面與雙語翻譯設定
+# 共用函數區
 # ==========================================
-st.set_page_config(page_title="Tester & Engineering Dashboard", layout="wide")
+def split_and_distribute(df, target_col, hours_col):
+    df = df.copy()
+    df[target_col] = df[target_col].astype(str).replace(['nan', 'None', ''], 'Unknown')
+    def safe_split(val):
+        if val == 'Unknown': return ['Unknown']
+        parts = re.split(r'[/,;\n\r]+', str(val))
+        parts = [p.strip() for p in parts if p.strip()]
+        return parts if parts else ['Unknown']
+    df['__split_list'] = df[target_col].apply(safe_split)
+    df['__split_count'] = df['__split_list'].apply(len)
+    df[hours_col] = df[hours_col] / df['__split_count']
+    df = df.explode('__split_list')
+    df[target_col] = df['__split_list']
+    df = df.drop(columns=['__split_list', '__split_count'])
+    return df
 
-LANG_DICT = {
-    "TW": {
-        "lang_selector": "🌐 選擇語言 / Select Language",
-        "sidebar_settings": "⚙️ 控制面板",
-        "upload_file": "📂 1. 上傳資料",
-        "kpi_settings": "🎯 2. KPI 目標設定",
-        "machine_count": "設定機台總數量 (預設 10 台)：",
-        "team_def": "👥 3. 團隊成員定義",
-        "cso_members": "選擇 CSO 成員：",
-        "gchip_members": "選擇 Gchip 成員：",
-        "guide_title": "💡 操作指南",
-        "guide_1": "請先從左側上傳包含 'Tester Hours' 與 'Engineering Hours' 兩個分頁的 Excel 檔案。",
-        "guide_2": "可於左側動態定義 CSO 與 Gchip 的團隊成員，預設值已自動帶入。",
-        "guide_3": "左側可設定總機台數量，系統將自動依據當月天數計算最低標使用時數。",
-        "guide_4": "點擊表格最右側的「任務說明」可展開檢視詳細工作項目。",
-        "upload_msg": "👈 請先從左側上傳 Excel 檔案以開始分析。",
-        "total_tester_hrs": "總機台使用時數",
-        "target_hrs": "🎯 最低標使用時數 (Target)",
-        "total_eng_hrs": "總工程師支援時數",
-        "tab_team": "🏢 團隊歸屬分析",
-        "tab_monthly": "📅 每月趨勢分析",
-        "tab_adv": "🌡️ 進階維度分析 (TEMP/ENG Member)",
-        "tab_req": "👤 客戶需求者分析",
-        "filter_label": "🔍 篩選資料：",
-        "no_data": "⚠️ 無資料可供顯示。",
-        "col_task": "📋 任務說明 (點擊展開)",
-        "col_detail": "⏱️ 時數明細 (點擊展開)",
-        "cso_section": "--- CSO 任務 ---",
-        "gchip_section": "--- Gchip 任務 ---",
-        "error_sheet": "讀取失敗：請確認上傳的 Excel 檔案內包含 'Tester Hours' 與 'Engineering Hours' 這兩個分頁。",
-        "release_notes": "📝 版本更新紀錄 (Release Notes)",
-        "ui_team_tester": "依團隊 (Team) 統計",
-        "ui_team_eng": "依團隊 (Team) 統計",
-        "ui_monthly_tester": "每月機台總時數",
-        "ui_monthly_eng": "每月依機台 (Tester) 統計",
-        "ui_adv_tester": "依溫度 (TEMP) 統計",
-        "ui_adv_eng": "每月工程師時數",
-        "ui_req_tester": "依客戶需求者統計",
-        "ui_req_eng": "依客戶需求者統計"
-    },
-    "EN": {
-        "lang_selector": "🌐 Select Language / 選擇語言",
-        "sidebar_settings": "⚙️ Control Panel",
-        "upload_file": "📂 1. Upload Data",
-        "kpi_settings": "🎯 2. KPI Target Settings",
-        "machine_count": "Total Tester Count (Default 10):",
-        "team_def": "👥 3. Team Definition",
-        "cso_members": "Select CSO Members:",
-        "gchip_members": "Select Gchip Members:",
-        "guide_title": "💡 Operation Guide",
-        "guide_1": "Upload an Excel file containing 'Tester Hours' and 'Engineering Hours' sheets from the left.",
-        "guide_2": "Dynamically define CSO and Gchip members on the left. Defaults are loaded automatically.",
-        "guide_3": "Set the total machine count on the left; the system calculates target hours based on days in the month.",
-        "guide_4": "Click 'Task Description' in the tables to expand and view detailed tasks.",
-        "upload_msg": "👈 Please upload an Excel file from the left sidebar to begin analysis.",
-        "total_tester_hrs": "Total Tester Hours",
-        "target_hrs": "🎯 Target Hours",
-        "total_eng_hrs": "Total Engineering Hours",
-        "tab_team": "🏢 Team Analysis",
-        "tab_monthly": "📅 Monthly Trend",
-        "tab_adv": "🌡️ Advanced Dimension (TEMP/ENG Member)",
-        "tab_req": "👤 Customer Requestor Analysis",
-        "filter_label": "🔍 Filter Data:",
-        "no_data": "⚠️ No data to display.",
-        "col_task": "📋 Task Description (Click to Expand)",
-        "col_detail": "⏱️ Hours Breakdown (Click to Expand)",
-        "cso_section": "--- CSO Tasks ---",
-        "gchip_section": "--- Gchip Tasks ---",
-        "error_sheet": "Read Error: Ensure the Excel file contains 'Tester Hours' and 'Engineering Hours' sheets.",
-        "release_notes": "📝 Release Notes",
-        "ui_team_tester": "Statistics by Team",
-        "ui_team_eng": "Statistics by Team",
-        "ui_monthly_tester": "Total Tester Hours by Month",
-        "ui_monthly_eng": "Monthly Statistics by Tester",
-        "ui_adv_tester": "Statistics by TEMP",
-        "ui_adv_eng": "Monthly Engineering Hours",
-        "ui_req_tester": "Statistics by Customer Requestor",
-        "ui_req_eng": "Statistics by Customer Requestor"
+# ==========================================
+# 🌟 聚合函數 (支援時數結構展開)
+# ==========================================
+def aggregate_data(df, group_by_cols, hours_col, show_breakdown=True):
+    if isinstance(group_by_cols, str): group_by_cols = [group_by_cols]
+    
+    breakdown_col = f"⏱️ {hours_col} (點擊展開)"
+    
+    # 決定要回傳哪些欄位
+    columns_to_return = group_by_cols + [hours_col, 'Task Details']
+    if show_breakdown:
+        columns_to_return.insert(-1, breakdown_col)
+        
+    if df.empty: 
+        return pd.DataFrame(columns=columns_to_return)
+        
+    # 1. 取得基本加總時數 
+    res_hours = df.groupby(group_by_cols)[hours_col].sum().reset_index()
+    res = res_hours
+    
+    # 2. 如果允許展開，則產生時數分配明細字串
+    if show_breakdown:
+        def format_hours(g):
+            total = g[hours_col].sum()
+            if 'Team' not in g.columns:
+                return f"總計: {total:.2f} hrs"
+                
+            cso_hrs = g[g['Team'] == 'CSO'][hours_col].sum()
+            gchip_hrs = g[g['Team'] == 'Gchip'][hours_col].sum()
+            other_hrs = g[g['Team'] == 'Other / Unassigned'][hours_col].sum()
+            
+            details = [f"總計: {total:.2f} hrs"]
+            if cso_hrs > 0: details.append(f"  ├ CSO: {cso_hrs:.2f} hrs")
+            if gchip_hrs > 0: details.append(f"  ├ Gchip: {gchip_hrs:.2f} hrs")
+            if other_hrs > 0: details.append(f"  └ Other: {other_hrs:.2f} hrs")
+            
+            return '\n'.join(details)
+            
+        res_breakdown = df.groupby(group_by_cols).apply(format_hours).reset_index(name=breakdown_col)
+        res = pd.merge(res_hours, res_breakdown, on=group_by_cols)
+
+    # 3. 任務文字說明聚合
+    def format_details(g):
+        details_str = []
+        if 'Team' not in g.columns:
+            tasks = g['Task Details'].unique()
+            valid_items = [str(i).strip() for i in tasks if pd.notna(i) and str(i).strip() != '']
+            return '\n'.join([f"  • {item}" for item in valid_items]) if valid_items else "無詳細說明 (N/A)"
+        
+        for team_name in ['CSO', 'Gchip', 'Other / Unassigned']:
+            team_rows = g[g['Team'] == team_name]
+            if team_rows.empty: continue
+            tasks = team_rows['Task Details'].unique()
+            valid_items = [str(i).strip() for i in tasks if pd.notna(i) and str(i).strip() != '']
+            if valid_items:
+                team_str = f"🏢 【{team_name}】 任務明細：\n" + '\n'.join([f"  • {item}" for item in valid_items])
+                details_str.append(team_str)
+        return '\n\n----------------------------------------\n\n'.join(details_str) if details_str else "無詳細說明 (N/A)"
+        
+    res_details = df.groupby(group_by_cols).apply(format_details).reset_index(name='Task Details')
+    
+    # 將資料合併並排序
+    res = pd.merge(res, res_details, on=group_by_cols)
+    res[hours_col] = res[hours_col].round(2)
+    
+    if 'Month' not in group_by_cols: res = res.sort_values(hours_col, ascending=False)
+    return res
+
+# ==========================================
+# 網頁主程式開始
+# ==========================================
+st.set_page_config(page_title="Hours Analysis Dashboard", layout="wide")
+
+st.markdown("""
+<style>
+    div.row-widget.stRadio > div {
+        flex-direction: row;
+        gap: 20px;
+        padding: 10px 0;
     }
-}
+    div.row-widget.stRadio label {
+        font-size: 1.1rem !important;
+        font-weight: 600 !important;
+        cursor: pointer;
+    }
+    .stDataFrame {
+        background-color: transparent !important;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-def _t(key):
-    return LANG_DICT[st.session_state.lang].get(key, key)
+# --- 主畫面標題 ---
+st.title("📊 機台與工程師時數進階分析儀表板")
 
-# ==========================================
-# 2. 核心處理函數 
-# ==========================================
-def split_and_distribute(df, col_name, value_col):
-    if col_name not in df.columns:
-        return df
-    
-    rows = []
-    for _, row in df.iterrows():
-        val = str(row[col_name])
-        for sep in [',', ';', '\n', '/']:
-            val = val.replace(sep, '|')
-        
-        parts = [p.strip() for p in val.split('|') if p.strip()]
-        if not parts:
-            parts = ['Unknown']
-            
-        divided_val = row[value_col] / len(parts) if pd.notnull(row[value_col]) else 0
-        
-        for p in parts:
-            new_row = row.copy()
-            new_row[col_name] = p
-            new_row[value_col] = divided_val
-            rows.append(new_row)
-            
-    return pd.DataFrame(rows)
-
-def aggregate_data(df, group_col, val_col, show_breakdown=False):
-    if df.empty:
-        return pd.DataFrame()
-        
-    def custom_agg(x):
-        d = {}
-        d[val_col] = x[val_col].sum()
-        
-        cso_tasks, gchip_tasks = set(), set()
-        for _, row in x.iterrows():
-            desc = f"{row.get('Lot #wafer', '')} / {row.get('Purpose', '')} / {row.get('Description', '')}".strip(" /")
-            if not desc: continue
-            
-            team = row.get('Team', 'Other')
-            if team == 'CSO': cso_tasks.add(f"• {desc}")
-            else: gchip_tasks.add(f"• {desc}")
-            
-        combined_desc = ""
-        if cso_tasks: combined_desc += _t("cso_section") + "\n" + "\n".join(cso_tasks) + "\n\n"
-        if gchip_tasks: combined_desc += _t("gchip_section") + "\n" + "\n".join(gchip_tasks)
-        d[_t('col_task')] = combined_desc.strip()
-        
-        if show_breakdown:
-            cso_hrs = x[x.get('Team', 'Other') == 'CSO'][val_col].sum()
-            gchip_hrs = x[x.get('Team', 'Other') != 'CSO'][val_col].sum()
-            d[_t('col_detail')] = f"CSO: {cso_hrs:.2f} hrs\nGchip: {gchip_hrs:.2f} hrs"
-            
-        return pd.Series(d)
-
-    agg_df = df.groupby(group_col, dropna=False).apply(custom_agg).reset_index()
-    agg_df[val_col] = agg_df[val_col].round(2)
-    return agg_df.sort_values(by=val_col, ascending=False)
-
-def get_target_hours(df, machine_count):
-    if df.empty or 'Date' not in df.columns:
-        return 0
-    unique_months = df['Month'].dropna().unique()
-    total_days = 0
-    for m in unique_months:
-        try:
-            year, month = int(str(m)[:4]), int(str(m)[5:7])
-            _, days = calendar.monthrange(year, month)
-            total_days += days
-        except:
-            total_days += 30
-    return total_days * 24 * machine_count * 0.5
-
-def render_table_and_chart(df, group_col, val_col, ui_title_key, chart_title, source_mark, palette="Blues_r", show_breakdown=False):
-    ui_title = _t(ui_title_key)
-    st.subheader(f"{source_mark} {ui_title}")
-    
-    if df.empty:
-        st.warning(_t("no_data"))
-        st.markdown("---")
-        return
-        
-    unique_vals = df[group_col].dropna().unique().tolist()
-    
-    # 建立左右分欄
-    col1, col2 = st.columns([1, 2])
-    
-    with col1:
-        # 將篩選器完美置入左側表格的正上方
-        selected_vals = st.multiselect(f"{_t('filter_label')} {ui_title}", unique_vals, default=unique_vals, key=f"ms_{chart_title}")
-        filtered_df = df[df[group_col].isin(selected_vals)]
-        
-        if filtered_df.empty:
-            st.warning(_t("no_data"))
-        else:
-            agg_df = aggregate_data(filtered_df, group_col, val_col, show_breakdown=show_breakdown)
-            cfg = {
-                _t('col_task'): st.column_config.TextColumn(width="medium"),
-                _t('col_detail'): st.column_config.TextColumn(width="small")
-            }
-            st.dataframe(agg_df, use_container_width=True, hide_index=True, column_config=cfg)
-        
-    with col2:
-        if filtered_df.empty:
-            st.info(_t("no_data"))
-        else:
-            sns.set_theme(style="whitegrid")
-            fig, ax = plt.subplots(figsize=(8, 4))
-            sns.barplot(data=agg_df, x=group_col, y=val_col, hue=group_col, palette=palette, ax=ax, legend=False, edgecolor="#FFFFFF")
-            ax.set_title(chart_title, fontweight='bold', color="#212529", pad=15)
-            ax.set_xlabel(group_col, color="#212529", labelpad=10)
-            ax.set_ylabel(val_col, color="#212529", labelpad=10)
-            plt.xticks(rotation=45, ha='right')
-            
-            ax.spines['top'].set_visible(False)
-            ax.spines['right'].set_visible(False)
-            
-            st.pyplot(fig)
-            plt.close(fig)
-        
-    st.markdown("---")
+with st.expander("🚀 版本更新紀錄 / Release Notes (點擊展開)"):
+    st.markdown("""
+    * **v25 (最新版)**: 🌟 **標題與維度微調**！將「進階維度分析」重新命名為更貼切的「進階維度分析 (TEMP/ENG Member)」，並為「[Engineering Hours] 依機台統計」補上月份 (Month) 維度，讓分析更具時間脈絡。
+    * **v24**: 🌟 排版邏輯調整！將「每月工程師時數」移至「進階維度分析」，並將「依機台統計」移至「每月趨勢分析」。
+    * **v23**: 🌟 動態 KPI 目標設定！最低標時數的「機台數量」設定移至左側，可自行調整並即時同步。
+    * **v22**: 🌟 優化明細展開範圍！專注於「每月趨勢」與「進階維度」，移除不必要的頁面展開。
+    * **v21**: 🌟 時數結構展開功能！總時數欄位升級為「點擊展開」格式，可直接檢視 CSO 與 Gchip 貢獻明細。
+    * **v20**: 🌟 無縫導覽與KPI升級！改用原生水平導覽列，新增動態計算的「最低標使用時數」指標。
+    * **v19**: 將超大頁籤底色更改為專業的淺灰藍色。
+    * **v18**: 頁籤視覺強化與修復。
+    * **v17**: UX 介面大改版！導入側邊欄收納設定、主畫面頂部加入 KPI 看板。
+    * **v16**: 🛡️ 系統穩定度升級！修復 aggregate_data KeyError。
+    * **v15**: 📝 任務明細自動使用分隔線將 CSO 與 Gchip 拆分顯示。
+    * **v14**: 新增「📋 任務說明」展開查詢功能。
+    * **v13**: 視覺風格優化！轉換為專業風格 (Professional Corporate Theme)。
+    * **v12**: 導入深色科技感主題 (Dark Tech Theme)。
+    * **v11**: 新增版本紀錄摺疊面板。
+    * **v10**: 加入「團隊成員自定義」功能。
+    * **v9**: 加入「動態篩選器 (Multiselect)」。
+    * **v8**: 解決中文亂碼問題，圖表純英文。
+    * **v7**: 介面大改版，左表格、右圖表。
+    * **v6**: 導入「多單位分割與時數均分邏輯」。
+    * **v5**: 擴充分析維度。
+    * **v4**: 加入檔案上傳功能。
+    * **v3**: 轉換為 Streamlit Web App。
+    * **v2**: 加入 Engineering Hours 分頁。
+    * **v1**: 初始版本。
+    """)
 
 # ==========================================
-# 3. 網頁主程式與側邊欄
+# 👈 左側邊欄 (Sidebar)
 # ==========================================
-if "lang" not in st.session_state:
-    st.session_state.lang = "TW"
-
 with st.sidebar:
-    st.radio("🌐 Language Selector", ["TW", "EN"], key="lang", horizontal=True)
-    st.header(_t("sidebar_settings"))
+    st.header("⚙️ 控制面板 (Control Panel)")
     
-    st.subheader(_t("upload_file"))
-    uploaded_file = st.file_uploader("", type=["xlsx", "xls"])
+    st.info("""
+    **💡 操作指南：**
+    1. 於下方上傳 Excel 檔案。
+    2. 設定 KPI 的機台總數與團隊成員。
+    3. 在右側主畫面選擇不同分析維度。
+    """)
     
-    st.subheader(_t("kpi_settings"))
-    machine_count = st.number_input(_t("machine_count"), min_value=1, value=10, step=1)
+    uploaded_file = st.file_uploader("📂 上傳 Excel 紀錄表", type=["xlsx", "xls"])
+    
+    st.divider()
+    st.subheader("🎯 KPI 目標設定")
+    tester_count = st.number_input("設定機台總數量 (供計算最低標時數)", min_value=1, value=10, step=1)
 
-title_text = "📊 設備與工程時數營運儀表板" if st.session_state.lang == "TW" else "📊 Tester & Engineering Hours Dashboard"
-st.title(title_text)
-
-st.info(f"""
-**{_t("guide_title")}**
-* {_t("guide_1")}
-* {_t("guide_2")}
-* {_t("guide_3")}
-* {_t("guide_4")}
-""")
-
-if uploaded_file is None:
-    st.warning(_t("upload_msg"))
-else:
+if uploaded_file is not None:
     try:
-        df_tester = pd.read_excel(uploaded_file, sheet_name="Tester Hours", skiprows=3)
-        df_eng = pd.read_excel(uploaded_file, sheet_name="Engineering Hours")
+        # --- 資料預處理 ---
+        target_detail_col = 'Lot #wafer / Purpose /Description'
         
+        df_tester_raw = pd.read_excel(uploaded_file, sheet_name="Tester Hours", skiprows=3)
+        df_tester = df_tester_raw[['Date', 'Tester #', 'Tester Total Hours', 'TEMP', 'Customer Requestor', target_detail_col]].copy()
+        df_tester.rename(columns={target_detail_col: 'Task Details'}, inplace=True)
+        df_tester.dropna(subset=['Date', 'Tester #', 'Tester Total Hours'], how='all', inplace=True)
         df_tester['Date'] = pd.to_datetime(df_tester['Date'], errors='coerce')
+        df_tester.dropna(subset=['Date'], inplace=True)
         df_tester['Month'] = df_tester['Date'].dt.to_period('M').astype(str)
+        df_tester['Tester Total Hours'] = pd.to_numeric(df_tester['Tester Total Hours'], errors='coerce').fillna(0)
+
+        df_eng_raw = pd.read_excel(uploaded_file, sheet_name="Engineering Hours")
+        df_eng = df_eng_raw[['Date', 'Name', 'Engineering Support Hours', 'Tester', 'Customer Requestor', target_detail_col]].copy()
+        df_eng.rename(columns={target_detail_col: 'Task Details'}, inplace=True)
+        df_eng.dropna(subset=['Date', 'Name', 'Engineering Support Hours'], how='all', inplace=True)
         df_eng['Date'] = pd.to_datetime(df_eng['Date'], errors='coerce')
+        df_eng.dropna(subset=['Date'], inplace=True)
         df_eng['Month'] = df_eng['Date'].dt.to_period('M').astype(str)
-        
-        df_tester = split_and_distribute(df_tester, 'Tester #', 'Tester Total Hours')
-        df_tester = split_and_distribute(df_tester, 'TEMP', 'Tester Total Hours')
-        df_tester = split_and_distribute(df_tester, 'Customer Requestor', 'Tester Total Hours')
-        
-        df_eng = split_and_distribute(df_eng, 'Tester', 'Engineering Support Hours')
-        df_eng = split_and_distribute(df_eng, 'Customer Requestor', 'Engineering Support Hours')
-        df_eng = split_and_distribute(df_eng, 'Name', 'Engineering Support Hours')
+        df_eng['Engineering Support Hours'] = pd.to_numeric(df_eng['Engineering Support Hours'], errors='coerce').fillna(0)
 
-        all_req_tester = df_tester['Customer Requestor'].dropna().astype(str).unique().tolist()
-        all_req_eng = df_eng['Customer Requestor'].dropna().astype(str).unique().tolist()
-        all_requestors = sorted(list(set(all_req_tester + all_req_eng)))
-        
-        if "cso_selection" not in st.session_state:
-            st.session_state.cso_selection = [n for n in all_requestors if "Alec" in n]
-        if "gchip_selection" not in st.session_state:
-            st.session_state.gchip_selection = [n for n in all_requestors if n in ["Rajesh", "Louis", "Chi-Chang"]]
-            
-        avail_for_cso = [n for n in all_requestors if n not in st.session_state.gchip_selection]
-        avail_for_gchip = [n for n in all_requestors if n not in st.session_state.cso_selection]
-        
+        for col in ['Tester #', 'TEMP', 'Customer Requestor']:
+            df_tester = split_and_distribute(df_tester, target_col=col, hours_col='Tester Total Hours')
+        for col in ['Name', 'Tester', 'Customer Requestor']:
+            df_eng = split_and_distribute(df_eng, target_col=col, hours_col='Engineering Support Hours')
+
+        # --- 側邊欄：團隊成員自定義區塊 ---
         with st.sidebar:
-            st.subheader(_t("team_def"))
-            cso_team = st.multiselect(_t("cso_members"), avail_for_cso, key="cso_selection")
-            gchip_team = st.multiselect(_t("gchip_members"), avail_for_gchip, key="gchip_selection")
+            st.divider()
+            st.subheader("👥 團隊成員定義")
+            all_requestors = sorted(list(set(df_tester['Customer Requestor'].unique()) | set(df_eng['Customer Requestor'].unique())))
             
-        df_tester['Team'] = df_tester['Customer Requestor'].apply(lambda x: 'CSO' if x in cso_team else ('Gchip' if x in gchip_team else 'Other'))
-        df_eng['Team'] = df_eng['Customer Requestor'].apply(lambda x: 'CSO' if x in cso_team else ('Gchip' if x in gchip_team else 'Other'))
+            if 'cso_selection' not in st.session_state:
+                st.session_state.cso_selection = [n for n in ['Alec'] if n in all_requestors]
+            if 'gchip_selection' not in st.session_state:
+                st.session_state.gchip_selection = [n for n in ['Rajesh', 'Louis', 'Chi-Chang'] if n in all_requestors]
 
-        actual_tester = df_tester['Tester Total Hours'].sum()
-        actual_eng = df_eng['Engineering Support Hours'].sum()
-        target_tester = get_target_hours(df_tester, machine_count)
-        diff_target = actual_tester - target_tester
+            avail_for_cso = [x for x in all_requestors if x not in st.session_state.gchip_selection]
+            avail_for_gchip = [x for x in all_requestors if x not in st.session_state.cso_selection]
+
+            cso_members = st.multiselect("定義 CSO 成員", options=avail_for_cso, key="cso_selection")
+            gchip_members = st.multiselect("定義 Gchip 成員", options=avail_for_gchip, key="gchip_selection")
+
+            def map_team(name):
+                if name in cso_members: return 'CSO'
+                elif name in gchip_members: return 'Gchip'
+                else: return 'Other / Unassigned'
+
+            df_tester['Team'] = df_tester['Customer Requestor'].apply(map_team)
+            df_eng['Team'] = df_eng['Customer Requestor'].apply(map_team)
+
+        # ==========================================
+        # 📈 主畫面：頂部 KPI 總覽看板
+        # ==========================================
+        st.subheader("📌 核心數據總覽 (Executive Summary)")
         
-        kpi1, kpi2, kpi3 = st.columns(3)
-        kpi1.metric(_t("total_tester_hrs"), f"{actual_tester:,.2f} hrs")
-        kpi2.metric(_t("target_hrs"), f"{target_tester:,.2f} hrs", f"{diff_target:,.2f} hrs", delta_color="normal")
-        kpi3.metric(_t("total_eng_hrs"), f"{actual_eng:,.2f} hrs")
+        total_tester_hrs = df_tester['Tester Total Hours'].sum()
+        
+        unique_months = df_tester['Month'].dropna().unique()
+        total_days = 0
+        for m in unique_months:
+            try:
+                total_days += pd.Period(m).days_in_month
+            except:
+                pass
+        
+        if total_days == 0: total_days = 30
+            
+        target_utilization = 0.5
+        min_required_hours = total_days * 24 * tester_count * target_utilization
+        delta_val = total_tester_hrs - min_required_hours
+        
+        total_eng_hrs = df_eng['Engineering Support Hours'].sum()
+        top_tester = df_tester.groupby('Tester #')['Tester Total Hours'].sum().idxmax() if not df_tester.empty else "N/A"
+        
+        kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+        kpi1.metric(label="🖥️ 總機台使用時數", value=f"{total_tester_hrs:,.1f} hrs")
+        kpi2.metric(
+            label=f"🎯 最低標使用時數 ({tester_count}台/50%)", 
+            value=f"{min_required_hours:,.0f} hrs", 
+            delta=f"{delta_val:,.1f} hrs", 
+            delta_color="normal"
+        )
+        kpi3.metric(label="🧑‍🔧 總工程支援時數", value=f"{total_eng_hrs:,.1f} hrs")
+        kpi4.metric(label="🔥 最高用量機台", value=f"{top_tester}")
+        
+        st.divider()
+
+        # ==========================================
+        # 🎨 圖表設定與排版函數
+        # ==========================================
+        plt.style.use('default')
+        corporate_params = {
+            "font.sans-serif": ["Microsoft JhengHei", "PingFang TC", "Arial Unicode MS", "SimHei", "sans-serif"],
+            "axes.unicode_minus": False, "figure.facecolor": "#FFFFFF", "axes.facecolor": "#F8F9FA",
+            "grid.color": "#DEE2E6", "grid.linestyle": "-", "grid.alpha": 0.8,
+            "text.color": "#212529", "axes.labelcolor": "#495057", "xtick.color": "#6C757D", "ytick.color": "#6C757D",
+        }
+        sns.set_theme(style="whitegrid", rc=corporate_params)
+
+        def render_table_and_chart(ui_title, chart_title, df, x_col, y_col, hue_col=None, filter_col=None, custom_palette=None, show_breakdown=True):
+            st.markdown(f"#### {ui_title}")
+            col_data, col_chart = st.columns([1, 2])
+            with col_data:
+                filtered_df = df
+                if filter_col:
+                    unique_items = sorted(df[filter_col].unique().tolist())
+                    selected_items = st.multiselect(f"🔽 篩選 {filter_col}", options=unique_items, default=unique_items, key=f"filter_{chart_title}")
+                    filtered_df = df[df[filter_col].isin(selected_items)]
+                
+                # 動態配置表格欄位屬性
+                column_config = {
+                    "Task Details": st.column_config.TextColumn(
+                        "📋 任務說明 (點擊展開)", 
+                        help="點擊儲存格，即可查看區分 CSO 與 Gchip 的完整工作內容",
+                        width="medium"
+                    )
+                }
+                
+                # 只有當 show_breakdown 為 True 時，才隱藏原數字欄並顯示文字明細欄
+                if show_breakdown:
+                    breakdown_col_name = f"⏱️ {y_col} (點擊展開)"
+                    column_config[y_col] = None  # 隱藏原數字欄
+                    column_config[breakdown_col_name] = st.column_config.TextColumn(
+                        breakdown_col_name,
+                        help="點擊儲存格，即可查看該時數的 CSO / Gchip 貢獻拆分",
+                        width="medium"
+                    )
+                
+                st.dataframe(
+                    filtered_df, 
+                    use_container_width=True, 
+                    hide_index=True,  
+                    column_config=column_config
+                )
+                
+            with col_chart:
+                if filtered_df.empty: st.warning("無資料可顯示。")
+                else:
+                    fig, ax = plt.subplots(figsize=(10, 4.5))
+                    if hue_col:
+                        sns.barplot(data=filtered_df, x=x_col, y=y_col, hue=hue_col, ax=ax, palette=custom_palette, edgecolor="#FFFFFF", linewidth=1.2)
+                        legend = ax.legend(title=hue_col, bbox_to_anchor=(1.05, 1), loc='upper left', frameon=False)
+                        plt.setp(legend.get_texts(), color='#495057'); plt.setp(legend.get_title(), color='#212529', fontweight='bold')
+                    else:
+                        sns.barplot(data=filtered_df, x=x_col, y=y_col, ax=ax, palette=custom_palette, edgecolor="#FFFFFF", linewidth=1.2)
+                    ax.spines['top'].set_visible(False); ax.spines['right'].set_visible(False)
+                    ax.spines['left'].set_color('#CED4DA'); ax.spines['bottom'].set_color('#CED4DA')
+                    ax.set_title(chart_title, fontweight='bold', pad=15, color='#212529')
+                    ax.set_xlabel(x_col, labelpad=10); ax.set_ylabel(y_col, labelpad=10)
+                    plt.xticks(rotation=45, ha='right'); plt.tight_layout()
+                    st.pyplot(fig)
+            st.divider()
+
+        # ==========================================
+        # 📑 分析視角切換導覽列
+        # ==========================================
+        st.markdown("### 🔍 切換分析視角")
+        
+        # 🌟 變更選項名稱
+        selected_view = st.radio(
+            label="選擇分析維度",
+            options=[
+                "🏢 團隊歸屬分析 (Team)", 
+                "📅 每月趨勢分析 (Monthly)", 
+                "🌡️ 進階維度分析 (TEMP/ENG Member)", 
+                "👤 客戶需求者分析 (Requestor)"
+            ],
+            horizontal=True,
+            label_visibility="collapsed" 
+        )
+        
         st.markdown("<br>", unsafe_allow_html=True)
 
-        selected_tab = st.radio("", [
-            _t("tab_team"), 
-            _t("tab_monthly"), 
-            _t("tab_adv"), 
-            _t("tab_req")
-        ], horizontal=True, label_visibility="collapsed")
-        st.markdown("---")
+        if selected_view == "🏢 團隊歸屬分析 (Team)":
+            team_tester_hours = aggregate_data(df_tester, 'Team', 'Tester Total Hours', show_breakdown=False)
+            team_eng_hours = aggregate_data(df_eng, 'Team', 'Engineering Support Hours', show_breakdown=False)
+            render_table_and_chart("🟦 [Tester Hours] 依團隊統計", "[Tester Hours] Total by Team", team_tester_hours, 'Team', 'Tester Total Hours', filter_col='Team', custom_palette=['#2B5B84', '#E67E22', '#95A5A6'], show_breakdown=False)
+            render_table_and_chart("🟧 [Engineering Hours] 依團隊統計", "[Engineering Hours] Total by Team", team_eng_hours, 'Team', 'Engineering Support Hours', filter_col='Team', custom_palette=['#2980B9', '#D35400', '#7F8C8D'], show_breakdown=False)
 
-        if selected_tab == _t("tab_team"):
-            render_table_and_chart(df_tester, 'Team', 'Tester Total Hours', 
-                                  "ui_team_tester", "[Tester Hours] by Team", "🟦", palette=["#1F449C", "#F05A28", "#A0A0A0"])
-            render_table_and_chart(df_eng, 'Team', 'Engineering Support Hours', 
-                                  "ui_team_eng", "[Engineering Hours] by Team", "🟧", palette=["#1F449C", "#F05A28", "#A0A0A0"])
-
-        elif selected_tab == _t("tab_monthly"):
-            render_table_and_chart(df_tester, 'Month', 'Tester Total Hours', 
-                                  "ui_monthly_tester", "[Tester Hours] Total by Month", "🟦", show_breakdown=True)
+        elif selected_view == "📅 每月趨勢分析 (Monthly)":
+            # [Tester Hours] 每月機台時數
+            monthly_tester_hours = aggregate_data(df_tester, ['Month', 'Tester #'], 'Tester Total Hours')
+            render_table_and_chart("🟦 [Tester Hours] 每月機台時數", "[Tester Hours] Monthly by Tester", monthly_tester_hours, 'Month', 'Tester Total Hours', hue_col='Tester #', filter_col='Tester #', custom_palette='deep')
             
-            df_eng['Month_Tester'] = df_eng['Month'] + " - " + df_eng['Tester'].astype(str)
-            render_table_and_chart(df_eng, 'Month_Tester', 'Engineering Support Hours', 
-                                  "ui_monthly_eng", "[Engineering Hours] by Month & Tester", "🟧", show_breakdown=True)
+            # 🌟 修改：加入 Month 欄位進行雙維度聚合
+            eng_tester_hours = aggregate_data(df_eng, ['Month', 'Tester'], 'Engineering Support Hours')
+            render_table_and_chart("🟧 [Engineering Hours] 每月依機台 (Tester) 統計", "[Engineering Hours] Monthly by Tester", eng_tester_hours, 'Month', 'Engineering Support Hours', hue_col='Tester', filter_col='Tester', custom_palette='Oranges_r')
 
-        elif selected_tab == _t("tab_adv"):
-            render_table_and_chart(df_tester, 'TEMP', 'Tester Total Hours', 
-                                  "ui_adv_tester", "[Tester Hours] by TEMP", "🟦", show_breakdown=True)
-            render_table_and_chart(df_eng, 'Month', 'Engineering Support Hours', 
-                                  "ui_adv_eng", "[Engineering Hours] Total by Month", "🟧", palette="Oranges_r", show_breakdown=True)
+        elif selected_view == "🌡️ 進階維度分析 (TEMP/ENG Member)":
+            # [Tester Hours] 依溫度 (TEMP) 統計
+            temp_hours = aggregate_data(df_tester, 'TEMP', 'Tester Total Hours')
+            render_table_and_chart("🟦 [Tester Hours] 依溫度 (TEMP) 統計", "[Tester Hours] Total by TEMP", temp_hours, 'TEMP', 'Tester Total Hours', filter_col='TEMP', custom_palette='Blues_r')
+            
+            # [Engineering Hours] 每月工程師時數
+            monthly_eng_hours = aggregate_data(df_eng, ['Month', 'Name'], 'Engineering Support Hours')
+            render_table_and_chart("🟧 [Engineering Hours] 每月工程師時數", "[Engineering Hours] Monthly by Engineer", monthly_eng_hours, 'Month', 'Engineering Support Hours', hue_col='Name', filter_col='Name', custom_palette='muted')
 
-        elif selected_tab == _t("tab_req"):
-            render_table_and_chart(df_tester, 'Customer Requestor', 'Tester Total Hours', 
-                                  "ui_req_tester", "[Tester Hours] by Customer Requestor", "🟦", show_breakdown=False)
-            render_table_and_chart(df_eng, 'Customer Requestor', 'Engineering Support Hours', 
-                                  "ui_req_eng", "[Engineering Hours] by Customer Requestor", "🟧", palette="Oranges_r", show_breakdown=False)
+        elif selected_view == "👤 客戶需求者分析 (Requestor)":
+            tester_req_hours = aggregate_data(df_tester, 'Customer Requestor', 'Tester Total Hours', show_breakdown=False)
+            eng_req_hours = aggregate_data(df_eng, 'Customer Requestor', 'Engineering Support Hours', show_breakdown=False)
+            render_table_and_chart("🟦 [Tester Hours] 依客戶統計", "[Tester Hours] Total by Requestor", tester_req_hours, 'Customer Requestor', 'Tester Total Hours', filter_col='Customer Requestor', custom_palette='Set2', show_breakdown=False)
+            render_table_and_chart("🟧 [Engineering Hours] 依客戶統計", "[Engineering Hours] Total by Requestor", eng_req_hours, 'Customer Requestor', 'Engineering Support Hours', filter_col='Customer Requestor', custom_palette='Set1', show_breakdown=False)
 
-    except ValueError as ve:
-        st.error(f"{_t('error_sheet')}\n\n詳細錯誤：{ve}")
     except Exception as e:
-        st.error(f"發生未知的錯誤：{e}")
+        st.error(f"執行時發生錯誤: {e}")
 
-# ==========================================
-# 4. 版本更新紀錄
-# ==========================================
-st.markdown("<br><br>", unsafe_allow_html=True)
-with st.expander(_t("release_notes")):
-    st.markdown("""
-    * **V27**: 修復介面排版，將多選篩選器重新收納至左側數據表格的正上方，還原最直覺的資料檢視動線。
-    * **V26**: 加入了雙語介面切換 (支援中文與英文)，保證底層邏輯與原始版本完全一致，僅翻譯文字。
-    * **V25**: 加入時數明細展開功能，升級表格 UI，使用 `st.column_config`。
-    * **V24**: 將介面設計翻新為專業商務風 (Professional Corporate Theme)，提升易讀性。
-    * **V23**: 加入側邊欄動態 KPI 目標機台數設定，能依據天數自動計算稼動率目標。
-    * **V22**: 修復了團隊成員設定互斥的問題，導入 `st.session_state` 防止人員重複歸屬。
-    * **V21**: 加入跨團隊的時數拆解視窗，主管能直接從表格查看 CSO 與 Gchip 的佔比。
-    * **V20**: 導入原生 `st.radio` 的水平選單，徹底解決 CSS 與深淺色模式的白底衝突。
-    * **V18**: 實作了側邊欄收納設定區，以及使用 Tabs 進行畫面切換，大幅減少頁面滾動。
-    * **V15**: 新增文字聚合功能，能將任務說明合併去重，並畫出明顯的分隔線。
-    * **V1-V14**: 完成核心資料讀取、切割平分演算法 (`/`, `,`, `;`, `\n`)、圖表 100% 英文防亂碼設定。
-    """)
+else:
+    st.info("👈 請於左側邊欄 (Sidebar) 上傳 Excel 檔案以開始分析。")
