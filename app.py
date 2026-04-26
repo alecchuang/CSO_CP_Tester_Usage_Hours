@@ -247,21 +247,21 @@ if uploaded_files:
         df_tester_raw = pd.concat(list_df_tester_raw, ignore_index=True)
         df_eng_raw = pd.concat(list_df_eng_raw, ignore_index=True)
         
-        df_tester = df_tester_raw[['Date', 'Tester #', 'Tester Total Hours', 'TEMP', 'Customer Requestor', target_detail_col]].copy()
+        df_tester = df_tester_raw[['Date', 'Tester #', 'Tester hours', 'TEMP', 'Customer Requestor', target_detail_col]].copy()
         df_tester.rename(columns={target_detail_col: 'Task Details'}, inplace=True)
-        df_tester.dropna(subset=['Date', 'Tester #', 'Tester Total Hours'], how='all', inplace=True)
+        df_tester.dropna(subset=['Date', 'Tester #', 'Tester hours'], how='all', inplace=True)
         df_tester['Date'] = pd.to_datetime(df_tester['Date'], errors='coerce')
         df_tester.dropna(subset=['Date'], inplace=True)
         df_tester['Month'] = df_tester['Date'].dt.to_period('M').astype(str)
-        df_tester['Tester Total Hours'] = pd.to_numeric(df_tester['Tester Total Hours'], errors='coerce').fillna(0)
+        df_tester['Tester hours'] = pd.to_numeric(df_tester['Tester hours'], errors='coerce').fillna(0)
 
-        df_eng = df_eng_raw[['Date', 'Name', 'Engineering Support Hours', 'Tester', 'Customer Requestor', target_detail_col]].copy()
+        df_eng = df_eng_raw[['Date', 'Name', 'ENG hours2', 'Tester #', 'Customer Requestor', target_detail_col]].copy()
         df_eng.rename(columns={target_detail_col: 'Task Details'}, inplace=True)
-        df_eng.dropna(subset=['Date', 'Name', 'Engineering Support Hours'], how='all', inplace=True)
+        df_eng.dropna(subset=['Date', 'Name', 'ENG hours2'], how='all', inplace=True)
         df_eng['Date'] = pd.to_datetime(df_eng['Date'], errors='coerce')
         df_eng.dropna(subset=['Date'], inplace=True)
         df_eng['Month'] = df_eng['Date'].dt.to_period('M').astype(str)
-        df_eng['Engineering Support Hours'] = pd.to_numeric(df_eng['Engineering Support Hours'], errors='coerce').fillna(0)
+        df_eng['ENG hours2'] = pd.to_numeric(df_eng['ENG hours2'], errors='coerce').fillna(0)
 
         # 🌟 側邊欄：月份篩選過濾器 
         with st.sidebar:
@@ -279,9 +279,9 @@ if uploaded_files:
         
         # 進行時數均分 (過濾月份後再均分，提高效能)
         for col in ['Tester #', 'TEMP', 'Customer Requestor']:
-            df_tester = split_and_distribute(df_tester, target_col=col, hours_col='Tester Total Hours')
-        for col in ['Name', 'Tester', 'Customer Requestor']:
-            df_eng = split_and_distribute(df_eng, target_col=col, hours_col='Engineering Support Hours')
+            df_tester = split_and_distribute(df_tester, target_col=col, hours_col='Tester hours')
+        for col in ['Name', 'Tester #', 'Customer Requestor']:
+            df_eng = split_and_distribute(df_eng, target_col=col, hours_col='ENG hours2')
 
         # --- 側邊欄：KPI 設定與團隊成員定義 ---
         with st.sidebar:
@@ -317,7 +317,7 @@ if uploaded_files:
         # ==========================================
         st.subheader(TXT_KPI_SUMMARY)
         
-        total_tester_hrs = df_tester['Tester Total Hours'].sum()
+        total_tester_hrs = df_tester['Tester hours'].sum()
         
         # 🌟 根據使用者「勾選的月份」精準計算總天數
         total_days = 0
@@ -330,8 +330,8 @@ if uploaded_files:
         min_required_hours = total_days * 24 * tester_count * target_utilization
         delta_val = total_tester_hrs - min_required_hours
         
-        total_eng_hrs = df_eng['Engineering Support Hours'].sum()
-        top_tester = df_tester.groupby('Tester #')['Tester Total Hours'].sum().idxmax() if not df_tester.empty else "N/A"
+        total_eng_hrs = df_eng['ENG hours2'].sum()
+        top_tester = df_tester.groupby('Tester #')['Tester hours'].sum().idxmax() if not df_tester.empty else "N/A"
         
         TXT_KPI_TARGET = f"🎯 Target Min Hours ({tester_count} units/50%)" if is_eng else f"🎯 最低標使用時數 ({tester_count}台/50%)"
         
@@ -428,28 +428,28 @@ if uploaded_files:
         st.markdown("<br>", unsafe_allow_html=True)
 
         if selected_view == TXT_NAV_TEAM:
-            team_tester_hours = aggregate_data(df_tester, 'Team', 'Tester Total Hours', show_breakdown=False, is_eng=is_eng)
-            team_eng_hours = aggregate_data(df_eng, 'Team', 'Engineering Support Hours', show_breakdown=False, is_eng=is_eng)
-            render_table_and_chart(UI_TESTER_TEAM, CHART_TESTER_TEAM, team_tester_hours, 'Team', 'Tester Total Hours', filter_col='Team', custom_palette=['#2B5B84', '#E67E22', '#95A5A6'], show_breakdown=False)
-            render_table_and_chart(UI_ENG_TEAM, CHART_ENG_TEAM, team_eng_hours, 'Team', 'Engineering Support Hours', filter_col='Team', custom_palette=['#2980B9', '#D35400', '#7F8C8D'], show_breakdown=False)
+            team_tester_hours = aggregate_data(df_tester, 'Team', 'Tester hours', show_breakdown=False, is_eng=is_eng)
+            team_eng_hours = aggregate_data(df_eng, 'Team', 'ENG hours2', show_breakdown=False, is_eng=is_eng)
+            render_table_and_chart(UI_TESTER_TEAM, CHART_TESTER_TEAM, team_tester_hours, 'Team', 'Tester hours', filter_col='Team', custom_palette=['#2B5B84', '#E67E22', '#95A5A6'], show_breakdown=False)
+            render_table_and_chart(UI_ENG_TEAM, CHART_ENG_TEAM, team_eng_hours, 'Team', 'ENG hours2', filter_col='Team', custom_palette=['#2980B9', '#D35400', '#7F8C8D'], show_breakdown=False)
 
         elif selected_view == TXT_NAV_MONTHLY:
-            monthly_tester_hours = aggregate_data(df_tester, ['Month', 'Tester #'], 'Tester Total Hours', is_eng=is_eng)
-            eng_tester_hours = aggregate_data(df_eng, ['Month', 'Tester'], 'Engineering Support Hours', is_eng=is_eng)
-            render_table_and_chart(UI_TESTER_MONTHLY, CHART_TESTER_MONTHLY, monthly_tester_hours, 'Month', 'Tester Total Hours', hue_col='Tester #', filter_col='Tester #', custom_palette='deep')
-            render_table_and_chart(UI_ENG_TESTER, CHART_ENG_TESTER, eng_tester_hours, 'Month', 'Engineering Support Hours', hue_col='Tester', filter_col='Tester', custom_palette='Oranges_r')
+            monthly_tester_hours = aggregate_data(df_tester, ['Month', 'Tester #'], 'Tester hours', is_eng=is_eng)
+            eng_tester_hours = aggregate_data(df_eng, ['Month', 'Tester #'], 'ENG hours2', is_eng=is_eng)
+            render_table_and_chart(UI_TESTER_MONTHLY, CHART_TESTER_MONTHLY, monthly_tester_hours, 'Month', 'Tester hours', hue_col='Tester #', filter_col='Tester #', custom_palette='deep')
+            render_table_and_chart(UI_ENG_TESTER, CHART_ENG_TESTER, eng_tester_hours, 'Month', 'ENG hours2', hue_col='Tester #', filter_col='Tester #', custom_palette='Oranges_r')
 
         elif selected_view == TXT_NAV_TEMP:
-            temp_hours = aggregate_data(df_tester, 'TEMP', 'Tester Total Hours', is_eng=is_eng)
-            monthly_eng_hours = aggregate_data(df_eng, ['Month', 'Name'], 'Engineering Support Hours', is_eng=is_eng)
-            render_table_and_chart(UI_TESTER_TEMP, CHART_TESTER_TEMP, temp_hours, 'TEMP', 'Tester Total Hours', filter_col='TEMP', custom_palette='Blues_r')
-            render_table_and_chart(UI_ENG_MONTHLY_ENG, CHART_ENG_MONTHLY_ENG, monthly_eng_hours, 'Month', 'Engineering Support Hours', hue_col='Name', filter_col='Name', custom_palette='muted')
+            temp_hours = aggregate_data(df_tester, 'TEMP', 'Tester hours', is_eng=is_eng)
+            monthly_eng_hours = aggregate_data(df_eng, ['Month', 'Name'], 'ENG hours2', is_eng=is_eng)
+            render_table_and_chart(UI_TESTER_TEMP, CHART_TESTER_TEMP, temp_hours, 'TEMP', 'Tester hours', filter_col='TEMP', custom_palette='Blues_r')
+            render_table_and_chart(UI_ENG_MONTHLY_ENG, CHART_ENG_MONTHLY_ENG, monthly_eng_hours, 'Month', 'ENG hours2', hue_col='Name', filter_col='Name', custom_palette='muted')
 
         elif selected_view == TXT_NAV_REQ:
-            tester_req_hours = aggregate_data(df_tester, 'Customer Requestor', 'Tester Total Hours', show_breakdown=False, is_eng=is_eng)
-            eng_req_hours = aggregate_data(df_eng, 'Customer Requestor', 'Engineering Support Hours', show_breakdown=False, is_eng=is_eng)
-            render_table_and_chart(UI_TESTER_REQ, CHART_TESTER_REQ, tester_req_hours, 'Customer Requestor', 'Tester Total Hours', filter_col='Customer Requestor', custom_palette='Set2', show_breakdown=False)
-            render_table_and_chart(UI_ENG_REQ, CHART_ENG_REQ, eng_req_hours, 'Customer Requestor', 'Engineering Support Hours', filter_col='Customer Requestor', custom_palette='Set1', show_breakdown=False)
+            tester_req_hours = aggregate_data(df_tester, 'Customer Requestor', 'Tester hours', show_breakdown=False, is_eng=is_eng)
+            eng_req_hours = aggregate_data(df_eng, 'Customer Requestor', 'ENG hours2', show_breakdown=False, is_eng=is_eng)
+            render_table_and_chart(UI_TESTER_REQ, CHART_TESTER_REQ, tester_req_hours, 'Customer Requestor', 'Tester hours', filter_col='Customer Requestor', custom_palette='Set2', show_breakdown=False)
+            render_table_and_chart(UI_ENG_REQ, CHART_ENG_REQ, eng_req_hours, 'Customer Requestor', 'ENG hours2', filter_col='Customer Requestor', custom_palette='Set1', show_breakdown=False)
 
     except Exception as e:
         st.error(f"{TXT_ERROR} {e}")
