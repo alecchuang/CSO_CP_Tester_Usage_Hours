@@ -5,10 +5,129 @@ import seaborn as sns
 import re
 
 # ==========================================
+# 🤖 新增：智慧尋找標題列 (取代容易失效的 skiprows)
+# ==========================================
+def load_excel_robust(file, sheet_name):
+    try:
+        # 讀取整個表格，暫不預設標題列
+        df = pd.read_excel(file, sheet_name=sheet_name, header=None)
+        
+        # 由上往下掃描，尋找同時包含 'date' 與 'tester' 的列作為標題
+        header_row = 0
+        for i, row in df.iterrows():
+            row_str = [str(x).strip().lower() for x in row.values]
+            if 'date' in row_str and any('tester' in x for x in row_str):
+                header_row = i
+                break
+                
+        df.columns = df.iloc[header_row]
+        df = df.iloc[header_row+1:].reset_index(drop=True)
+        df.columns = [str(c).strip() for c in df.columns]
+        df = df.dropna(how='all')
+        return df
+    except Exception as e:
+        return pd.DataFrame()
+
+# ==========================================
+# 🛡️ 新增：欄位自動修復引擎 (Auto-Healing Columns)
+# ==========================================
+def standardize_columns(df, sheet_type):
+    df = df.copy()
+    if df.empty: return df
+    df.columns = [str(c).strip() for c in df.columns]
+    
+    # 統一 Date
+    for c in list(df.columns):
+        if str(c).strip().lower() == 'date':
+            df.rename(columns={c: 'Date'}, inplace=True)
+            break
+    if 'Date' not in df.columns: df['Date'] = None
+
+    # 統一任務說明
+    for c in list(df.columns):
+        if 'purpose' in c.lower() and 'description' in c.lower():
+            df.rename(columns={c: 'Task Details'}, inplace=True)
+            break
+    if 'Task Details' not in df.columns: df['Task Details'] = "N/A"
+        
+    # 統一 TEMP
+    for c in list(df.columns):
+        if c.lower() == 'temp':
+            df.rename(columns={c: 'TEMP'}, inplace=True)
+            break
+    if 'TEMP' not in df.columns: df['TEMP'] = "Unknown"
+        
+    # 統一 Customer Requestor
+    for c in list(df.columns):
+        if c.lower() == 'customer requestor':
+            df.rename(columns={c: 'Customer Requestor'}, inplace=True)
+            break
+    if 'Customer Requestor' not in df.columns: df['Customer Requestor'] = "Unknown"
+
+    if sheet_type == 'Tester':
+        # 統一 Tester #
+        for c in list(df.columns):
+            if c.lower() in ['tester', 'tester#', 'tester #']:
+                df.rename(columns={c: 'Tester #'}, inplace=True)
+                break
+        if 'Tester #' not in df.columns: df['Tester #'] = "Unknown"
+        
+        # 尋找數值時數 (避開文字時間)
+        found = False
+        for c in list(df.columns):
+            if c.lower() == 'tester hours':
+                if 'Tester Total Hours' in df.columns and c != 'Tester Total Hours':
+                    df = df.drop(columns=['Tester Total Hours'])
+                df.rename(columns={c: 'Tester Total Hours'}, inplace=True)
+                found = True
+                break
+        if not found:
+            if 'Tester Total Hours' not in df.columns: df['Tester Total Hours'] = 0.0
+
+    elif sheet_type == 'Engineering':
+        # 統一 Tester
+        for c in list(df.columns):
+            if c.lower() in ['tester', 'tester#', 'tester #']:
+                df.rename(columns={c: 'Tester'}, inplace=True)
+                break
+        if 'Tester' not in df.columns: df['Tester'] = "Unknown"
+        
+        # 尋找 Engineering 時數
+        found = False
+        for c in list(df.columns):
+            if c.lower() == 'eng hours2':
+                if 'Engineering Support Hours' in df.columns:
+                    df.drop(columns=['Engineering Support Hours'], inplace=True)
+                df.rename(columns={c: 'Engineering Support Hours'}, inplace=True)
+                found = True
+                break
+        if not found:
+            for c in list(df.columns):
+                if c.lower() == 'eng hours':
+                    if 'Engineering Support Hours' in df.columns:
+                        df.drop(columns=['Engineering Support Hours'], inplace=True)
+                    df.rename(columns={c: 'Engineering Support Hours'}, inplace=True)
+                    found = True
+                    break
+        if not found: df['Engineering Support Hours'] = 0.0
+
+        # 如果檔案漏填工程師姓名 (Name)，自動修補
+        found_name = False
+        for c in list(df.columns):
+            if c.lower() == 'name':
+                df.rename(columns={c: 'Name'}, inplace=True)
+                found_name = True
+                break
+        if not found_name: df['Name'] = "Unknown"
+            
+    return df
+
+# ==========================================
 # 共用函數區
 # ==========================================
 def split_and_distribute(df, target_col, hours_col):
     df = df.copy()
+    if target_col not in df.columns: return df
     df[target_col] = df[target_col].astype(str).replace(['nan', 'None', ''], 'Unknown')
     def safe_split(val):
         if val == 'Unknown': return ['Unknown']
@@ -23,13 +142,9 @@ def split_and_distribute(df, target_col, hours_col):
     df = df.drop(columns=['__split_list', '__split_count'])
     return df
 
-# ==========================================
-# 🌟 聚合函數 (導入語系變數 is_eng)
-# ==========================================
 def aggregate_data(df, group_by_cols, hours_col, show_breakdown=True, is_eng=False):
     if isinstance(group_by_cols, str): group_by_cols = [group_by_cols]
     
-    # [函數內部文字變數]
     txt_click_expand = "(Click to expand)" if is_eng else "(點擊展開)"
     txt_total = "Total" if is_eng else "總計"
     txt_no_detail = "No details provided (N/A)" if is_eng else "無詳細說明 (N/A)"
@@ -70,13 +185,14 @@ def aggregate_data(df, group_by_cols, hours_col, show_breakdown=True, is_eng=Fal
     def format_details(g):
         details_str = []
         if 'Team' not in g.columns:
+            if 'Task Details' not in g.columns: return txt_no_detail
             tasks = g['Task Details'].unique()
             valid_items = [str(i).strip() for i in tasks if pd.notna(i) and str(i).strip() != '']
             return '\n'.join([f"  • {item}" for item in valid_items]) if valid_items else txt_no_detail
         
         for team_name in ['CSO', 'Gchip', 'Other / Unassigned']:
             team_rows = g[g['Team'] == team_name]
-            if team_rows.empty: continue
+            if team_rows.empty or 'Task Details' not in team_rows.columns: continue
             tasks = team_rows['Task Details'].unique()
             valid_items = [str(i).strip() for i in tasks if pd.notna(i) and str(i).strip() != '']
             if valid_items:
@@ -120,36 +236,27 @@ st.markdown("""
 # ==========================================
 is_eng = st.sidebar.toggle("🌐 Switch to English (全英文介面)", value=False)
 
-# --- 標題與說明變數 ---
 TXT_APP_TITLE = "📊 Tester & Engineer Hours Advanced Dashboard" if is_eng else "📊 機台與工程師時數進階分析儀表板"
 TXT_REL_NOTES_TITLE = "🚀 Release Notes (Click to Expand)" if is_eng else "🚀 版本更新紀錄 / Release Notes (點擊展開)"
 TXT_REL_NOTES_CONTENT = """
-* **v29 (最新版)**: 📅 **月份篩選功能**！在左側邊欄新增了「選擇統計月份」的過濾器，自動抓取資料涵蓋的所有月份，讓您可以自由勾選欲統計的時間範圍。
-* **v28**: 📂 多檔案合併分析支援！上傳區塊現在支援一次選取多個 Excel 檔案，系統會自動在背景將相同分頁的數據合併。
-* **v27**: 🐛 多國語系 Bug 修復！解決了切換英文版時 KPI 看板因變數未定義引發的錯誤。
-* **v26**: 🌐 雙語系支援 (i18n)！全站字串抽離，支援中英切換 Toggle 鍵無縫切換語言。
-* **v25**: 🌟 標題與維度微調！重新命名進階維度，並為「依機台統計」補上月份維度。
-* **v24**: 🌟 排版邏輯調整！將工程師時數移至進階維度，依機台統計移至每月趨勢。
-* **v23**: 🌟 動態 KPI 目標設定！機台數量可自行調整。
-* **v22**: 🌟 優化明細展開範圍！移除不必要的頁面展開。
-* **v21**: 🌟 時數結構展開功能！檢視 CSO 與 Gchip 明細。
-* **v20**: 🌟 無縫導覽與KPI升級！水平導覽列與動態最低標時數。
-* **v1~v19**: 包含圖表渲染優化、防呆機制、拖曳上傳、均分邏輯等核心功能建置。
+* **v31 (最新版)**: 🤖 **智慧相容升級**！導入「AI尋標引擎」與「欄位自動修復機制」，自動適應 Excel 報表格式的變動（如標題行位置改變、工程師姓名缺漏、欄位名稱微調），從此告別上傳格式錯誤。
+* **v30**: 🛡️ 欄位自動修復引擎建置，解決 Excel 實際欄位名稱微調問題。
+* **v29**: 📅 **月份篩選功能**！支援多檔案的月份擷取與自訂時間過濾。
+* **v28**: 📂 多檔案合併分析支援！上傳區塊支援一次選取多個 Excel 檔案合併。
+* **v27**: 🐛 多國語系 Bug 修復。
+* **v26**: 🌐 雙語系支援 (i18n)！全站字串抽離，支援中英無縫切換。
+* **v25**: 🌟 標題與維度微調！
+* **v1~v24**: 包含圖表渲染優化、防呆機制、拖曳上傳、均分邏輯等核心功能建置。
 """ if not is_eng else """
-* **v29 (Latest)**: 📅 **Month Filter added**! A new month selection filter in the sidebar allows you to specify the exact months to analyze.
-* **v28**: 📂 Multiple File Upload & Merge Support! The system automatically merges data from matching sheets across all files before analysis.
-* **v27**: 🐛 i18n Bug Fix! Fixed a NameError on the KPI dashboard.
-* **v26**: 🌐 Bilingual Support (i18n)! Added an English/Chinese toggle button.
-* **v25**: 🌟 Title & dimension fine-tuning.
-* **v24**: 🌟 Layout logic adjustment.
-* **v23**: 🌟 Dynamic KPI Target Setting.
-* **v22**: 🌟 Optimized breakdown scope.
-* **v21**: 🌟 Hours structure expandable breakdown.
-* **v20**: 🌟 Seamless navigation & KPI upgrade.
-* **v1~v19**: Core functionalities including algorithms, drag-and-drop upload, layout, and stability optimizations.
+* **v31 (Latest)**: 🤖 **Smart Compatibility Upgrade**! Introduced Auto-Healing Engine. It dynamically finds the correct headers and fixes missing/renamed columns (e.g., missing 'Name' column, header row shifting) across different Excel versions automatically.
+* **v30**: 🛡️ Auto-Healing Columns logic added.
+* **v29**: 📅 **Month Filter added**!
+* **v28**: 📂 Multiple File Upload & Merge Support!
+* **v27**: 🐛 i18n Bug Fix.
+* **v26**: 🌐 Bilingual Support (i18n)!
+* **v1~v25**: Core functionalities including algorithms, drag-and-drop upload, layout, and stability optimizations.
 """
 
-# --- 側邊欄變數 ---
 TXT_SIDEBAR_CTRL = "⚙️ Control Panel" if is_eng else "⚙️ 控制面板 (Control Panel)"
 TXT_SIDEBAR_GUIDE = """
 **💡 Quick Guide:**
@@ -170,13 +277,11 @@ TXT_TEAM_DEF = "👥 Team Members Definition" if is_eng else "👥 團隊成員�
 TXT_DEF_CSO = "Define CSO Members" if is_eng else "定義 CSO 成員"
 TXT_DEF_GCHIP = "Define Gchip Members" if is_eng else "定義 Gchip 成員"
 
-# --- 核心數據變數 ---
 TXT_KPI_SUMMARY = "📌 Executive Summary" if is_eng else "📌 核心數據總覽 (Executive Summary)"
 TXT_KPI_TOTAL_TESTER = "🖥️ Total Tester Hours" if is_eng else "🖥️ 總機台使用時數"
 TXT_KPI_TOTAL_ENG = "🧑‍🔧 Total Eng Hours" if is_eng else "🧑‍🔧 總工程支援時數"
 TXT_KPI_TOP_TESTER = "🔥 Top Usage Tester" if is_eng else "🔥 最高用量機台"
 
-# --- 導覽列變數 ---
 TXT_SWITCH_VIEW = "### 🔍 Switch Analysis View" if is_eng else "### 🔍 切換分析視角"
 TXT_SELECT_DIM = "Select Analysis Dimension" if is_eng else "選擇分析維度"
 TXT_NAV_TEAM = "🏢 Team Analysis" if is_eng else "🏢 團隊歸屬分析 (Team)"
@@ -184,7 +289,6 @@ TXT_NAV_MONTHLY = "📅 Monthly Trends" if is_eng else "📅 每月趨勢分析 
 TXT_NAV_TEMP = "🌡️ Advanced Dimensions (TEMP/ENG Member)" if is_eng else "🌡️ 進階維度分析 (TEMP/ENG Member)"
 TXT_NAV_REQ = "👤 Requestor Analysis" if is_eng else "👤 客戶需求者分析 (Requestor)"
 
-# --- 圖表與表格變數 ---
 TXT_NO_FILE = "👈 Please upload Excel file(s) from the left sidebar to begin." if is_eng else "👈 請於左側邊欄 (Sidebar) 上傳 Excel 檔案以開始分析。"
 TXT_ERROR = "Error occurred during execution:" if is_eng else "執行時發生錯誤:"
 TXT_NO_DATA = "No data to display." if is_eng else "無資料可顯示。"
@@ -193,7 +297,6 @@ TXT_TASK_COL = "📋 Task Details (Click to expand)" if is_eng else "📋 任務
 TXT_TASK_HELP = "Click cell to view complete task details split by CSO and Gchip" if is_eng else "點擊儲存格，即可查看區分 CSO 與 Gchip 的完整工作內容"
 TXT_BREAKDOWN_HELP = "Click cell to view CSO / Gchip hour breakdown" if is_eng else "點擊儲存格，即可查看該時數的 CSO / Gchip 貢獻拆分"
 
-# 依視角定義的圖表標題變數
 UI_TESTER_TEAM = "🟦 [Tester Hours] Total by Team" if is_eng else "🟦 [Tester Hours] 依團隊統計"
 CHART_TESTER_TEAM = "[Tester Hours] Total by Team"
 UI_ENG_TEAM = "🟧 [Engineering Hours] Total by Team" if is_eng else "🟧 [Engineering Hours] 依團隊統計"
@@ -214,7 +317,6 @@ CHART_TESTER_REQ = "[Tester Hours] Total by Requestor"
 UI_ENG_REQ = "🟧 [Engineering Hours] Total by Requestor" if is_eng else "🟧 [Engineering Hours] 依客戶統計"
 CHART_ENG_REQ = "[Engineering Hours] Total by Requestor"
 
-
 # ==========================================
 # 介面開始繪製
 # ==========================================
@@ -223,67 +325,67 @@ st.title(TXT_APP_TITLE)
 with st.expander(TXT_REL_NOTES_TITLE):
     st.markdown(TXT_REL_NOTES_CONTENT)
 
-# 👈 左側邊欄
 with st.sidebar:
     st.header(TXT_SIDEBAR_CTRL)
     st.info(TXT_SIDEBAR_GUIDE)
-    
     uploaded_files = st.file_uploader(TXT_UPLOAD_FILE, type=["xlsx", "xls"], accept_multiple_files=True)
 
 if uploaded_files:
     try:
-        # --- 資料預處理 (支援多檔案合併) ---
-        target_detail_col = 'Lot #wafer / Purpose /Description'
-        
         list_df_tester_raw = []
         list_df_eng_raw = []
         
         for file in uploaded_files:
-            temp_tester = pd.read_excel(file, sheet_name="Tester Hours", skiprows=3)
-            temp_eng = pd.read_excel(file, sheet_name="Engineering Hours")
+            # 🌟 透過動態尋找標題列讀取
+            temp_tester = load_excel_robust(file, "Tester Hours")
+            # 🌟 透過欄位自癒引擎整理對應
+            temp_tester = standardize_columns(temp_tester, 'Tester')
             list_df_tester_raw.append(temp_tester)
+            
+            temp_eng = load_excel_robust(file, "Engineering Hours")
+            temp_eng = standardize_columns(temp_eng, 'Engineering')
             list_df_eng_raw.append(temp_eng)
             
         df_tester_raw = pd.concat(list_df_tester_raw, ignore_index=True)
         df_eng_raw = pd.concat(list_df_eng_raw, ignore_index=True)
         
-        df_tester = df_tester_raw[['Date', 'Tester #', 'Tester hours', 'TEMP', 'Customer Requestor', target_detail_col]].copy()
-        df_tester.rename(columns={target_detail_col: 'Task Details'}, inplace=True)
-        df_tester.dropna(subset=['Date', 'Tester #', 'Tester hours'], how='all', inplace=True)
+        # 篩選所需的必備欄位 (由於自動修復引擎已確保欄位存在，可安心選取)
+        df_tester = df_tester_raw[['Date', 'Tester #', 'Tester Total Hours', 'TEMP', 'Customer Requestor', 'Task Details']].copy()
+        df_tester.dropna(subset=['Date', 'Tester #', 'Tester Total Hours'], how='all', inplace=True)
         df_tester['Date'] = pd.to_datetime(df_tester['Date'], errors='coerce')
         df_tester.dropna(subset=['Date'], inplace=True)
         df_tester['Month'] = df_tester['Date'].dt.to_period('M').astype(str)
-        df_tester['Tester hours'] = pd.to_numeric(df_tester['Tester hours'], errors='coerce').fillna(0)
+        df_tester['Tester Total Hours'] = pd.to_numeric(df_tester['Tester Total Hours'], errors='coerce').fillna(0)
 
-        df_eng = df_eng_raw[['Date', 'Name', 'ENG hours2', 'Tester #', 'Customer Requestor', target_detail_col]].copy()
-        df_eng.rename(columns={target_detail_col: 'Task Details'}, inplace=True)
-        df_eng.dropna(subset=['Date', 'Name', 'ENG hours2'], how='all', inplace=True)
+        df_eng = df_eng_raw[['Date', 'Name', 'Engineering Support Hours', 'Tester', 'Customer Requestor', 'Task Details']].copy()
+        df_eng.dropna(subset=['Date', 'Name', 'Engineering Support Hours'], how='all', inplace=True)
         df_eng['Date'] = pd.to_datetime(df_eng['Date'], errors='coerce')
         df_eng.dropna(subset=['Date'], inplace=True)
         df_eng['Month'] = df_eng['Date'].dt.to_period('M').astype(str)
-        df_eng['ENG hours2'] = pd.to_numeric(df_eng['ENG hours2'], errors='coerce').fillna(0)
+        df_eng['Engineering Support Hours'] = pd.to_numeric(df_eng['Engineering Support Hours'], errors='coerce').fillna(0)
 
-        # 🌟 側邊欄：月份篩選過濾器 
+        # --- 側邊欄：月份篩選 ---
         with st.sidebar:
             st.divider()
-            all_months = sorted(list(set(df_tester['Month'].unique()) | set(df_eng['Month'].unique())))
+            all_months = sorted(list(set(df_tester.get('Month', [])).union(set(df_eng.get('Month', [])))))
             selected_months = st.multiselect(TXT_MONTH_FILTER, options=all_months, default=all_months)
             
-            # 根據使用者選擇的月份過濾資料
             if selected_months:
-                df_tester = df_tester[df_tester['Month'].isin(selected_months)]
-                df_eng = df_eng[df_eng['Month'].isin(selected_months)]
+                if not df_tester.empty: df_tester = df_tester[df_tester['Month'].isin(selected_months)]
+                if not df_eng.empty: df_eng = df_eng[df_eng['Month'].isin(selected_months)]
             else:
-                df_tester = df_tester.iloc[0:0] # 若全取消勾選，清空資料
+                df_tester = df_tester.iloc[0:0] 
                 df_eng = df_eng.iloc[0:0]
         
-        # 進行時數均分 (過濾月份後再均分，提高效能)
+        # 進行時數均分邏輯
         for col in ['Tester #', 'TEMP', 'Customer Requestor']:
-            df_tester = split_and_distribute(df_tester, target_col=col, hours_col='Tester hours')
-        for col in ['Name', 'Tester #', 'Customer Requestor']:
-            df_eng = split_and_distribute(df_eng, target_col=col, hours_col='ENG hours2')
+            if col in df_tester.columns:
+                df_tester = split_and_distribute(df_tester, target_col=col, hours_col='Tester Total Hours')
+        for col in ['Name', 'Tester', 'Customer Requestor']:
+            if col in df_eng.columns:
+                df_eng = split_and_distribute(df_eng, target_col=col, hours_col='Engineering Support Hours')
 
-        # --- 側邊欄：KPI 設定與團隊成員定義 ---
+        # --- 側邊欄：KPI 設定與團隊定義 ---
         with st.sidebar:
             st.divider()
             st.subheader(TXT_KPI_SETTING)
@@ -291,7 +393,9 @@ if uploaded_files:
             
             st.divider()
             st.subheader(TXT_TEAM_DEF)
-            all_requestors = sorted(list(set(df_tester['Customer Requestor'].unique()) | set(df_eng['Customer Requestor'].unique())))
+            all_reqs_t = df_tester['Customer Requestor'].unique() if 'Customer Requestor' in df_tester.columns else []
+            all_reqs_e = df_eng['Customer Requestor'].unique() if 'Customer Requestor' in df_eng.columns else []
+            all_requestors = sorted(list(set(all_reqs_t) | set(all_reqs_e)))
             
             if 'cso_selection' not in st.session_state:
                 st.session_state.cso_selection = [n for n in ['Alec'] if n in all_requestors]
@@ -309,17 +413,16 @@ if uploaded_files:
                 elif name in gchip_members: return 'Gchip'
                 else: return 'Other / Unassigned'
 
-            df_tester['Team'] = df_tester['Customer Requestor'].apply(map_team)
-            df_eng['Team'] = df_eng['Customer Requestor'].apply(map_team)
+            if not df_tester.empty: df_tester['Team'] = df_tester['Customer Requestor'].apply(map_team)
+            if not df_eng.empty: df_eng['Team'] = df_eng['Customer Requestor'].apply(map_team)
 
         # ==========================================
         # 📈 主畫面：頂部 KPI
         # ==========================================
         st.subheader(TXT_KPI_SUMMARY)
         
-        total_tester_hrs = df_tester['Tester hours'].sum()
+        total_tester_hrs = df_tester['Tester Total Hours'].sum() if not df_tester.empty else 0
         
-        # 🌟 根據使用者「勾選的月份」精準計算總天數
         total_days = 0
         for m in selected_months:
             try: total_days += pd.Period(m).days_in_month
@@ -330,8 +433,8 @@ if uploaded_files:
         min_required_hours = total_days * 24 * tester_count * target_utilization
         delta_val = total_tester_hrs - min_required_hours
         
-        total_eng_hrs = df_eng['ENG hours2'].sum()
-        top_tester = df_tester.groupby('Tester #')['Tester hours'].sum().idxmax() if not df_tester.empty else "N/A"
+        total_eng_hrs = df_eng['Engineering Support Hours'].sum() if not df_eng.empty else 0
+        top_tester = df_tester.groupby('Tester #')['Tester Total Hours'].sum().idxmax() if not df_tester.empty else "N/A"
         
         TXT_KPI_TARGET = f"🎯 Target Min Hours ({tester_count} units/50%)" if is_eng else f"🎯 最低標使用時數 ({tester_count}台/50%)"
         
@@ -365,7 +468,7 @@ if uploaded_files:
             col_data, col_chart = st.columns([1, 2])
             with col_data:
                 filtered_df = df
-                if filter_col:
+                if filter_col and not df.empty and filter_col in df.columns:
                     unique_items = sorted(df[filter_col].unique().tolist())
                     selected_items = st.multiselect(f"{TXT_FILTER} {filter_col}", options=unique_items, default=unique_items, key=f"filter_{chart_title}")
                     filtered_df = df[df[filter_col].isin(selected_items)]
@@ -378,7 +481,7 @@ if uploaded_files:
                     )
                 }
                 
-                if show_breakdown:
+                if show_breakdown and y_col in filtered_df.columns:
                     txt_click_expand = "(Click to expand)" if is_eng else "(點擊展開)"
                     breakdown_col_name = f"⏱️ {y_col} {txt_click_expand}"
                     column_config[y_col] = None  
@@ -399,7 +502,7 @@ if uploaded_files:
                 if filtered_df.empty: st.warning(TXT_NO_DATA)
                 else:
                     fig, ax = plt.subplots(figsize=(10, 4.5))
-                    if hue_col:
+                    if hue_col and hue_col in filtered_df.columns:
                         sns.barplot(data=filtered_df, x=x_col, y=y_col, hue=hue_col, ax=ax, palette=custom_palette, edgecolor="#FFFFFF", linewidth=1.2)
                         legend = ax.legend(title=hue_col, bbox_to_anchor=(1.05, 1), loc='upper left', frameon=False)
                         plt.setp(legend.get_texts(), color='#495057'); plt.setp(legend.get_title(), color='#212529', fontweight='bold')
@@ -428,28 +531,28 @@ if uploaded_files:
         st.markdown("<br>", unsafe_allow_html=True)
 
         if selected_view == TXT_NAV_TEAM:
-            team_tester_hours = aggregate_data(df_tester, 'Team', 'Tester hours', show_breakdown=False, is_eng=is_eng)
-            team_eng_hours = aggregate_data(df_eng, 'Team', 'ENG hours2', show_breakdown=False, is_eng=is_eng)
-            render_table_and_chart(UI_TESTER_TEAM, CHART_TESTER_TEAM, team_tester_hours, 'Team', 'Tester hours', filter_col='Team', custom_palette=['#2B5B84', '#E67E22', '#95A5A6'], show_breakdown=False)
-            render_table_and_chart(UI_ENG_TEAM, CHART_ENG_TEAM, team_eng_hours, 'Team', 'ENG hours2', filter_col='Team', custom_palette=['#2980B9', '#D35400', '#7F8C8D'], show_breakdown=False)
+            team_tester_hours = aggregate_data(df_tester, 'Team', 'Tester Total Hours', show_breakdown=False, is_eng=is_eng)
+            team_eng_hours = aggregate_data(df_eng, 'Team', 'Engineering Support Hours', show_breakdown=False, is_eng=is_eng)
+            render_table_and_chart(UI_TESTER_TEAM, CHART_TESTER_TEAM, team_tester_hours, 'Team', 'Tester Total Hours', filter_col='Team', custom_palette=['#2B5B84', '#E67E22', '#95A5A6'], show_breakdown=False)
+            render_table_and_chart(UI_ENG_TEAM, CHART_ENG_TEAM, team_eng_hours, 'Team', 'Engineering Support Hours', filter_col='Team', custom_palette=['#2980B9', '#D35400', '#7F8C8D'], show_breakdown=False)
 
         elif selected_view == TXT_NAV_MONTHLY:
-            monthly_tester_hours = aggregate_data(df_tester, ['Month', 'Tester #'], 'Tester hours', is_eng=is_eng)
-            eng_tester_hours = aggregate_data(df_eng, ['Month', 'Tester #'], 'ENG hours2', is_eng=is_eng)
-            render_table_and_chart(UI_TESTER_MONTHLY, CHART_TESTER_MONTHLY, monthly_tester_hours, 'Month', 'Tester hours', hue_col='Tester #', filter_col='Tester #', custom_palette='deep')
-            render_table_and_chart(UI_ENG_TESTER, CHART_ENG_TESTER, eng_tester_hours, 'Month', 'ENG hours2', hue_col='Tester #', filter_col='Tester #', custom_palette='Oranges_r')
+            monthly_tester_hours = aggregate_data(df_tester, ['Month', 'Tester #'], 'Tester Total Hours', is_eng=is_eng)
+            eng_tester_hours = aggregate_data(df_eng, ['Month', 'Tester'], 'Engineering Support Hours', is_eng=is_eng)
+            render_table_and_chart(UI_TESTER_MONTHLY, CHART_TESTER_MONTHLY, monthly_tester_hours, 'Month', 'Tester Total Hours', hue_col='Tester #', filter_col='Tester #', custom_palette='deep')
+            render_table_and_chart(UI_ENG_TESTER, CHART_ENG_TESTER, eng_tester_hours, 'Month', 'Engineering Support Hours', hue_col='Tester', filter_col='Tester', custom_palette='Oranges_r')
 
         elif selected_view == TXT_NAV_TEMP:
-            temp_hours = aggregate_data(df_tester, 'TEMP', 'Tester hours', is_eng=is_eng)
-            monthly_eng_hours = aggregate_data(df_eng, ['Month', 'Name'], 'ENG hours2', is_eng=is_eng)
-            render_table_and_chart(UI_TESTER_TEMP, CHART_TESTER_TEMP, temp_hours, 'TEMP', 'Tester hours', filter_col='TEMP', custom_palette='Blues_r')
-            render_table_and_chart(UI_ENG_MONTHLY_ENG, CHART_ENG_MONTHLY_ENG, monthly_eng_hours, 'Month', 'ENG hours2', hue_col='Name', filter_col='Name', custom_palette='muted')
+            temp_hours = aggregate_data(df_tester, 'TEMP', 'Tester Total Hours', is_eng=is_eng)
+            monthly_eng_hours = aggregate_data(df_eng, ['Month', 'Name'], 'Engineering Support Hours', is_eng=is_eng)
+            render_table_and_chart(UI_TESTER_TEMP, CHART_TESTER_TEMP, temp_hours, 'TEMP', 'Tester Total Hours', filter_col='TEMP', custom_palette='Blues_r')
+            render_table_and_chart(UI_ENG_MONTHLY_ENG, CHART_ENG_MONTHLY_ENG, monthly_eng_hours, 'Month', 'Engineering Support Hours', hue_col='Name', filter_col='Name', custom_palette='muted')
 
         elif selected_view == TXT_NAV_REQ:
-            tester_req_hours = aggregate_data(df_tester, 'Customer Requestor', 'Tester hours', show_breakdown=False, is_eng=is_eng)
-            eng_req_hours = aggregate_data(df_eng, 'Customer Requestor', 'ENG hours2', show_breakdown=False, is_eng=is_eng)
-            render_table_and_chart(UI_TESTER_REQ, CHART_TESTER_REQ, tester_req_hours, 'Customer Requestor', 'Tester hours', filter_col='Customer Requestor', custom_palette='Set2', show_breakdown=False)
-            render_table_and_chart(UI_ENG_REQ, CHART_ENG_REQ, eng_req_hours, 'Customer Requestor', 'ENG hours2', filter_col='Customer Requestor', custom_palette='Set1', show_breakdown=False)
+            tester_req_hours = aggregate_data(df_tester, 'Customer Requestor', 'Tester Total Hours', show_breakdown=False, is_eng=is_eng)
+            eng_req_hours = aggregate_data(df_eng, 'Customer Requestor', 'Engineering Support Hours', show_breakdown=False, is_eng=is_eng)
+            render_table_and_chart(UI_TESTER_REQ, CHART_TESTER_REQ, tester_req_hours, 'Customer Requestor', 'Tester Total Hours', filter_col='Customer Requestor', custom_palette='Set2', show_breakdown=False)
+            render_table_and_chart(UI_ENG_REQ, CHART_ENG_REQ, eng_req_hours, 'Customer Requestor', 'Engineering Support Hours', filter_col='Customer Requestor', custom_palette='Set1', show_breakdown=False)
 
     except Exception as e:
         st.error(f"{TXT_ERROR} {e}")
